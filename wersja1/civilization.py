@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import random
 from city import City
 from terrain import TERRAINS, get_terrain_by_symbol
 
@@ -7,20 +8,19 @@ class Civilization:
     
     def __init__(self, name, start_pos, game_map):
         self.name = name
-        self.cities = []          # lista obiektów City
-        self.technologies = set() # posiadane technologie
+        self.cities = []
+        self.technologies = set()
         self.food = 50
         self.wood = 20
         self.stone = 10
-        self.population = 5       # całkowita populacja (suma z miast)
-        self.tech_level = 0       # poziom technologii (0-5)
+        self.population = 5
+        self.tech_level = 0
         self.game_map = game_map
+        self.map_size = len(game_map)
         
-        # Podstawowa technologia
         self.technologies.add("Rolnictwo")
     
     def add_city(self, position):
-        """Dodaje nowe miasto w podanej pozycji (x,y)."""
         if not self._is_valid_city_position(position):
             return False
         city = City(position, self.game_map)
@@ -29,23 +29,57 @@ class Civilization:
         return True
     
     def _is_valid_city_position(self, pos):
-        """Sprawdza czy można założyć miasto (teren nie może być wodą/górami)."""
         x, y = pos
         symbol = self.game_map[x][y]
         terrain = get_terrain_by_symbol(symbol)
         return terrain.passable and not self._is_city_at(pos)
     
     def _is_city_at(self, pos):
-        for city in self.cities:
-            if city.position == pos:
-                return True
-        return False
+        return any(city.position == pos for city in self.cities)
     
     def _recalculate_population(self):
         self.population = sum(city.population for city in self.cities)
     
+    def _get_climate_zone(self, x):
+        """Zwraca strefę klimatyczną na podstawie wiersza x (0-góra, rozmiar-dół)."""
+        if x < self.map_size // 3:
+            return 'cold'       # górna część mapy – zimno
+        elif x < 2 * self.map_size // 3:
+            return 'temperate'  # środkowa – umiarkowana
+        else:
+            return 'warm'       # dolna – ciepła
+    
+    def consume_wood_for_heating(self):
+        """W zimnych strefach miasta zużywają drewno na opał. Brak powoduje spadek populacji."""
+        total_wood_needed = 0
+        for city in self.cities:
+            x, _ = city.position
+            zone = self._get_climate_zone(x)
+            pop = city.population
+            if zone == 'cold':
+                need = (pop + 1) // 2   # 1 drewna na 2 osoby (zaokrąglenie w górę)
+            elif zone == 'temperate':
+                need = (pop + 3) // 4   # 1 drewna na 4 osoby
+            else:  # warm
+                need = 0
+            total_wood_needed += need
+        
+        # Modyfikatory zdarzeń
+        if hasattr(self, 'wood_heating_modifier'):
+            total_wood_needed = int(total_wood_needed * self.wood_heating_modifier)
+        
+        if self.wood >= total_wood_needed:
+            self.wood -= total_wood_needed
+        else:
+            deficit = total_wood_needed - self.wood
+            self.wood = 0
+            # Brak drewna powoduje spadek populacji (1 osoba na każde 2 brakujące drewna)
+            deaths = (deficit + 1) // 2
+            self.change_population(-deaths)
+            # Komunikat zostanie wyświetlony przez UI (można dodać w game.py)
+            print(f"❄️ Brak drewna na opał! {deaths} osób zamarzło.")
+    
     def gather_resources(self, game_map):
-        """Zbiera surowce ze wszystkich pól należących do miast."""
         food_gathered = 0
         wood_gathered = 0
         stone_gathered = 0
@@ -56,7 +90,6 @@ class Civilization:
             wood_gathered += w
             stone_gathered += s
         
-        # Modyfikatory technologii
         if "Rolnictwo" in self.technologies:
             food_gathered = int(food_gathered * 1.2)
         if "Górnictwo" in self.technologies:
@@ -64,24 +97,78 @@ class Civilization:
         if "Tartak" in self.technologies:
             wood_gathered = int(wood_gathered * 1.3)
         
+        # Modyfikatory zdarzeń (np. fala upałów)
+        if hasattr(self, 'food_modifier'):
+            food_gathered = int(food_gathered * self.food_modifier)
+        
         self.change_food(food_gathered)
         self.change_wood(wood_gathered)
         self.change_stone(stone_gathered)
     
     def consume_food(self):
-        """Każda jednostka populacji zużywa 2 żywności na turę."""
         consumption = self.population * 2
         self.change_food(-consumption)
     
     def grow_population(self):
-        """Jeśli nadwyżka żywności > 10, wzrost populacji."""
         if self.food > 20 and self.population > 0:
             growth = min(2, self.food // 15)
             self.change_population(growth)
             self.change_food(-growth * 10)
-            # Dodaj nową populację do pierwszego miasta
             if self.cities:
                 self.cities[0].population += growth
+    
+    def auto_found_city(self, ui):
+        """Automatyczne zakładanie nowego miasta, gdy populacja jest wysoka i są surowce."""
+        # Warunki: populacja >= 15, co najmniej 30 drewna i 50 żywności, oraz nie za dużo miast
+        if self.population < 15:
+            return
+        if self.wood < 30 or self.food < 50:
+            return
+        # Ograniczenie liczby miast (np. max 1 miasto na 5 populacji)
+        if len(self.cities) >= self.population // 5:
+            return
+        
+        # Znajdź odpowiednie miejsce w pobliżu istniejących miast
+        new_pos = None
+        for city in self.cities:
+            x0, y0 = city.position
+            for dx in range(-5, 6):
+                for dy in range(-5, 6):
+                    x = x0 + dx
+                    y = y0 + dy
+                    if 0 <= x < self.map_size and 0 <= y < self.map_size:
+                        if self._is_valid_city_position((x, y)):
+                            new_pos = (x, y)
+                            break
+                if new_pos:
+                    break
+            if new_pos:
+                break
+        
+        if not new_pos:
+            return  # brak wolnego miejsca
+        
+        # Znajdź miasto z największą populacją (źródło osadników)
+        source_city = max(self.cities, key=lambda c: c.population)
+        if source_city.population < 3:
+            return
+        
+        # Koszt: 30 drewna, 50 żywności, 3 populacji
+        self.change_wood(-30)
+        self.change_food(-50)
+        source_city.population -= 3
+        self._recalculate_population()
+        
+        # Załóż nowe miasto
+        self.add_city(new_pos)
+        # Nowe miasto ma początkową populację 3 (już dodane przez add_city, ale tam jest 3)
+        # Znajdź nowo dodane miasto i ustaw jego populację na 3 (bo add_city daje domyślnie 3)
+        for city in self.cities:
+            if city.position == new_pos:
+                city.population = 3
+                break
+        
+        ui.show_message(f"🏙️ Autonomiczni osadnicy z miasta {source_city.position} założyli nowe miasto na pozycji {new_pos}!")
     
     def change_food(self, delta):
         self.food += delta
@@ -102,19 +189,15 @@ class Civilization:
         self.population += delta
         if self.population < 0:
             self.population = 0
-        # Aktualizuj populację w miastach proporcjonalnie
         if self.cities and self.population > 0:
-            # Prosty podział – pierwsze miasto dostaje całość
-            self.cities[0].population = self.population
+            self.cities[0].population = self.population  # uproszczenie – cała populacja w pierwszym mieście
     
     def apply_technology_bonuses(self):
-        """Efekty technologii (poza surowcami)."""
         if "Urbanizacja" in self.technologies:
-            # Zmniejszenie konsumpcji żywności o 20% (nie implementujemy tu)
+            # Zmniejszenie konsumpcji żywności o 20% (można dodać później)
             pass
     
     def research_technology(self, ui):
-        """Pozwala graczowi na badanie nowej technologii."""
         techs_available = {
             "Górnictwo": {"cost": 30, "stone": 30},
             "Tartak": {"cost": 25, "wood": 25},
@@ -158,7 +241,6 @@ class Civilization:
         ui.show_message(f"✅ Odkryto technologię: {tech}!")
     
     def found_city(self, game_map, ui):
-        """Zakłada nowe miasto (wymaga 50 drewna i 3 populacji)."""
         if self.wood < 50 or self.population < 3:
             ui.show_message("Brak surowców: potrzeba 50 drewna i 3 populacji.")
             return
@@ -170,7 +252,6 @@ class Civilization:
             self.add_city(pos)
             self.change_wood(-50)
             self.change_population(-3)
-            # Przesuń populację z pierwszego miasta
             if self.cities:
                 self.cities[0].population -= 3
             ui.show_message(f"Założono nowe miasto na pozycji ({x},{y})!")
@@ -179,3 +260,23 @@ class Civilization:
     
     def is_defeated(self):
         return self.population <= 0 or len(self.cities) == 0
+
+    def research_technology_auto(self, tech_name):
+        """Automatyczne badanie technologii (bez interakcji z UI)."""
+        techs_available = {
+            "Górnictwo": {"cost": 30, "stone": 30},
+            "Tartak": {"cost": 25, "wood": 25},
+            "Urbanizacja": {"cost": 50, "food": 40, "stone": 20}
+        }
+        if tech_name not in techs_available or tech_name in self.technologies:
+            return
+        cost = techs_available[tech_name]
+        # Sprawdź, czy stać
+        for res in cost:
+            if res != 'cost' and getattr(self, res, 0) < cost[res]:
+                return
+        # Zapłać
+        for res in cost:
+            if res != 'cost':
+                setattr(self, res, getattr(self, res) - cost[res])
+        self.technologies.add(tech_name)

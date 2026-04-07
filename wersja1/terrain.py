@@ -13,8 +13,8 @@ class Terrain:
 
 # Stałe tereny
 TERRAINS = {
-    'plains': Terrain("Równina", "R", 2, 1, 0, "\033[92m", True),   # zielony
-    'forest': Terrain("Las", "L", 1, 3, 0, "\033[32m", True),        # ciemnozielony
+    'plains': Terrain("Równina", "R", 2, 1, 0, "\033[92m", True),     # zielony
+    'forest': Terrain("Las", "L", 1, 3, 0, "\033[32m", True),         # ciemnozielony
     'mountain': Terrain("Góry", "G", 0, 0, 3, "\033[37m", False),     # biały
     'water': Terrain("Woda", "W", 0, 0, 0, "\033[34m", False),        # niebieski
     'swamp': Terrain("Bagno", "B", 1, 1, 0, "\033[36m", True)         # cyjan
