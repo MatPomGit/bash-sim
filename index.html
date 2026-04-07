@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cywilizacja: Początek – gra przeglądarkowa</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: #1a2a1f;
+            font-family: 'Courier New', monospace;
+            color: #d4e6c3;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #2c3e2b;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+        }
+        h1 {
+            text-align: center;
+            font-size: 2rem;
+            margin: 0 0 10px 0;
+            color: #f9e45b;
+            text-shadow: 2px 2px 0 #5a3e1a;
+        }
+        .sub {
+            text-align: center;
+            margin-bottom: 20px;
+            font-style: italic;
+        }
+        .game-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .map-area {
+            flex: 2;
+            min-width: 300px;
+            background: #1e2a1c;
+            padding: 10px;
+            border-radius: 12px;
+            overflow-x: auto;
+        }
+        .map-canvas {
+            display: grid;
+            gap: 2px;
+            justify-content: center;
+        }
+        .cell {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.1s;
+            background-color: #3a5a35;
+        }
+        .cell:hover {
+            filter: brightness(1.2);
+            transform: scale(1.02);
+        }
+        .info-panel {
+            flex: 1;
+            min-width: 260px;
+            background: #1f2e1d;
+            border-radius: 12px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .stats {
+            background: #2c3e2b;
+            padding: 10px;
+            border-radius: 10px;
+            border-left: 5px solid #f9e45b;
+        }
+        .stats p {
+            margin: 5px 0;
+        }
+        .cities-list {
+            background: #2c3e2b;
+            padding: 10px;
+            border-radius: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .cities-list h3 {
+            margin: 0 0 5px 0;
+            font-size: 1.1rem;
+        }
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        button {
+            background: #4a6e3f;
+            border: none;
+            color: white;
+            font-family: inherit;
+            font-weight: bold;
+            padding: 6px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: 0.1s;
+            font-size: 0.9rem;
+        }
+        button:hover {
+            background: #6e9f5a;
+            transform: scale(1.02);
+        }
+        .auto-toggle {
+            background: #3a2e2a;
+            border: 1px solid #b87c4f;
+        }
+        .auto-active {
+            background: #2a6b2f;
+            box-shadow: 0 0 5px #a5d6a5;
+        }
+        .log {
+            background: #0f1a0e;
+            border-radius: 10px;
+            padding: 8px;
+            height: 120px;
+            overflow-y: auto;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+        .turn-btn {
+            background: #c97e2a;
+            font-size: 1.2rem;
+            padding: 8px;
+            margin-top: 10px;
+        }
+        .flex-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        hr {
+            border-color: #5e7c52;
+        }
+        .tech-list {
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🏛️ CYWilizacja: POCZĄTEK 🏛️</h1>
+    <div class="sub">Symulacja rozwoju cywilizacji w przeglądarce</div>
+    <div class="game-panel">
+        <div class="map-area">
+            <div id="map-grid" class="map-canvas" style="grid-template-columns: repeat(1, 32px);"></div>
+        </div>
+        <div class="info-panel">
+            <div class="stats">
+                <div class="flex-row"><span>📅 TURA:</span><span id="turn-count">0</span></div>
+                <div class="flex-row"><span>🍎 Żywność:</span><span id="food-val">0</span></div>
+                <div class="flex-row"><span>🪵 Drewno:</span><span id="wood-val">0</span></div>
+                <div class="flex-row"><span>🪨 Kamień:</span><span id="stone-val">0</span></div>
+                <div class="flex-row"><span>👥 Populacja:</span><span id="pop-val">0</span></div>
+                <div class="flex-row"><span>🔬 Technologie:</span><span id="tech-list" class="tech-list">brak</span></div>
+            </div>
+            <div class="cities-list">
+                <h3>🏙️ Miasta</h3>
+                <div id="cities-container">brak</div>
+            </div>
+            <div class="actions">
+                <button id="action-city">🏗️ Załóż miasto (50 drewna, 3 pop)</button>
+                <button id="action-tech">📖 Badaj technologię</button>
+                <button id="auto-settings">⚙️ Automatyzacja</button>
+            </div>
+            <div id="auto-panel" style="background:#2c3e2b; border-radius:10px; padding:8px; display:none;">
+                <div class="flex-row"><label>🔁 Automatyczny handel</label> <input type="checkbox" id="auto-trade" checked></div>
+                <div class="flex-row"><label>🚶 Automatyczne migracje</label> <input type="checkbox" id="auto-migrate" checked></div>
+                <div class="flex-row"><label>🔬 Automatyczne badania</label> <input type="checkbox" id="auto-research" checked></div>
+                <div class="flex-row"><label>🤖 Pełny autopilot</label> <input type="checkbox" id="auto-full"></div>
+                <button id="close-auto" style="margin-top:5px;">Zamknij</button>
+            </div>
+            <button id="next-turn" class="turn-btn">⏩ ZAKOŃCZ TURĘ</button>
+            <div class="log" id="log-area">
+                Witaj, władco! Rozpocznij rozwój swojej cywilizacji.<br>
+                Kliknij "Zakończ turę", aby przejść do następnej tury.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ===================== DEFINICJE TERENÓW =====================
+    const TERRAINS = {
+        'plains': { name:"Równina", symbol:"R", color:"#8bc34a", food:2, wood:1, stone:0, passable:true },
+        'forest': { name:"Las", symbol:"L", color:"#2e7d32", food:1, wood:3, stone:0, passable:true },
+        'mountain':{ name:"Góry", symbol:"G", color:"#9e9e9e", food:0, wood:0, stone:3, passable:false },
+        'water':   { name:"Woda", symbol:"W", color:"#2196f3", food:0, wood:0, stone:0, passable:false },
+        'swamp':   { name:"Bagno", symbol:"B", color:"#8d6e63", food:1, wood:1, stone:0, passable:true }
+    };
+    const TERRAIN_LIST = ['plains','forest','mountain','water','swamp'];
+
+    // ===================== KLASA MIASTA =====================
+    class City {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.population = 3;
+        }
+        getPosition() { return [this.x, this.y]; }
+    }
+
+    // ===================== KLASA CYWILIZACJI =====================
+    class Civilization {
+        constructor(name, startX, startY, gameMap) {
+            this.name = name;
+            this.cities = [];
+            this.technologies = new Set(["Rolnictwo"]);
+            this.food = 50;
+            this.wood = 20;
+            this.stone = 10;
+            this.population = 5;
+            this.gameMap = gameMap;  // referencja do tablicy terenów (symbole)
+            this.mapSize = gameMap.length;
+            // efekty zdarzeń
+            this.foodModifier = 1.0;
+            this.woodHeatingModifier = 1.0;
+        }
+
+        addCity(x, y) {
+            if (!this.isValidCityPosition(x,y)) return false;
+            let city = new City(x,y);
+            this.cities.push(city);
+            this.recalcPopulation();
+            return true;
+        }
+
+        isValidCityPosition(x,y) {
+            if (x<0 || y<0 || x>=this.mapSize || y>=this.mapSize) return false;
+            let terrainKey = this.gameMap[x][y];
+            let terr = TERRAINS[terrainKey];
+            if (!terr.passable) return false;
+            return !this.cities.some(c => c.x===x && c.y===y);
+        }
+
+        recalcPopulation() {
+            this.population = this.cities.reduce((sum,c)=>sum+c.population,0);
+        }
+
+        getClimateZone(x) {
+            if (x < this.mapSize/3) return 'cold';
+            if (x < 2*this.mapSize/3) return 'temperate';
+            return 'warm';
+        }
+
+        consumeWoodForHeating() {
+            let needed = 0;
+            for (let city of this.cities) {
+                let zone = this.getClimateZone(city.x);
+                let pop = city.population;
+                if (zone === 'cold') needed += Math.ceil(pop/2);
+                else if (zone === 'temperate') needed += Math.ceil(pop/4);
+            }
+            needed = Math.floor(needed * this.woodHeatingModifier);
+            if (this.wood >= needed) {
+                this.wood -= needed;
+            } else {
+                let deficit = needed - this.wood;
+                this.wood = 0;
+                let deaths = Math.ceil(deficit/2);
+                this.changePopulation(-deaths);
+                addLog(`❄️ Brak drewna na opał! ${deaths} osób zamarzło.`);
+            }
+        }
+
+        gatherResources() {
+            let foodGain = 0, woodGain = 0, stoneGain = 0;
+            for (let city of this.cities) {
+                let rad = 2;
+                for (let dx=-rad; dx<=rad; dx++) {
+                    for (let dy=-rad; dy<=rad; dy++) {
+                        let nx = city.x+dx, ny = city.y+dy;
+                        if (nx>=0 && ny>=0 && nx<this.mapSize && ny<this.mapSize) {
+                            let terrKey = this.gameMap[nx][ny];
+                            let terr = TERRAINS[terrKey];
+                            let mult = Math.max(1, Math.floor(city.population/2));
+                            foodGain += terr.food * mult;
+                            woodGain += terr.wood * mult;
+                            stoneGain += terr.stone * mult;
+                        }
+                    }
+                }
+            }
+            if (this.technologies.has("Rolnictwo")) foodGain = Math.floor(foodGain*1.2);
+            if (this.technologies.has("Górnictwo")) stoneGain = Math.floor(stoneGain*1.5);
+            if (this.technologies.has("Tartak")) woodGain = Math.floor(woodGain*1.3);
+            foodGain = Math.floor(foodGain * this.foodModifier);
+            this.changeFood(foodGain);
+            this.changeWood(woodGain);
+            this.changeStone(stoneGain);
+        }
+
+        consumeFood() {
+            let consumption = this.population * 2;
+            this.changeFood(-consumption);
+        }
+
+        growPopulation() {
+            if (this.food > 20 && this.population > 0) {
+                let growth = Math.min(2, Math.floor(this.food/15));
+                if (growth > 0) {
+                    this.changePopulation(growth);
+                    this.changeFood(-growth*10);
+                    if (this.cities.length) this.cities[0].population += growth;
+                }
+            }
+        }
+
+        autoFoundCity() {
+            if (this.population < 15) return false;
+            if (this.wood < 30 || this.food < 50) return false;
+            if (this.cities.length >= Math.floor(this.population/5)) return false;
+            // szukaj wolnego miejsca w pobliżu istniejących miast
+            for (let city of this.cities) {
+                for (let dx=-5; dx<=5; dx++) {
+                    for (let dy=-5; dy<=5; dy++) {
+                        let nx = city.x+dx, ny = city.y+dy;
+                        if (this.isValidCityPosition(nx,ny)) {
+                            // znajdź źródło populacji
+                            let source = this.cities.reduce((a,b)=>a.population>b.population?a:b);
+                            if (source.population < 3) continue;
+                            this.wood -= 30;
+                            this.food -= 50;
+                            source.population -= 3;
+                            this.addCity(nx,ny);
+                            let newCity = this.cities.find(c=>c.x===nx && c.y===ny);
+                            if (newCity) newCity.population = 3;
+                            this.recalcPopulation();
+                            addLog(`🏙️ Autonomiczni osadnicy z miasta (${city.x},${city.y}) założyli nowe miasto na (${nx},${ny})!`);
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        autoTrade() {
+            if (this.wood > 40) {
+                if (this.stone < 10) {
+                    this.wood -= 20;
+                    this.stone += 10;
+                    addLog("🤝 Automatyczny handel: 20 drewna → 10 kamienia.");
+                    return true;
+                } else if (this.food < 20) {
+                    this.wood -= 15;
+                    this.food += 15;
+                    addLog("🤝 Automatyczny handel: 15 drewna → 15 żywności.");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        autoMigration() {
+            if (this.cities.length < 2) return false;
+            let maxCity = this.cities.reduce((a,b)=>a.population>b.population?a:b);
+            let minCity = this.cities.reduce((a,b)=>a.population<b.population?a:b);
+            if (maxCity.population - minCity.population >= 4) {
+                maxCity.population--;
+                minCity.population++;
+                this.recalcPopulation();
+                addLog(`🚶 Migracja: 1 osoba z (${maxCity.x},${maxCity.y}) do (${minCity.x},${minCity.y})`);
+                return true;
+            }
+            return false;
+        }
+
+        researchTechnologyAuto(techName, availableTechs) {
+            if (!availableTechs[techName]) return false;
+            let cost = availableTechs[techName];
+            if (this.technologies.has(techName)) return false;
+            if (this.stone >= (cost.stone||0) && this.wood >= (cost.wood||0) && this.food >= (cost.food||0)) {
+                if (cost.stone) this.stone -= cost.stone;
+                if (cost.wood) this.wood -= cost.wood;
+                if (cost.food) this.food -= cost.food;
+                this.technologies.add(techName);
+                addLog(`🔬 Automatyczne badanie: ${techName}!`);
+                return true;
+            }
+            return false;
+        }
+
+        changeFood(delta) { this.food = Math.max(0, this.food+delta); }
+        changeWood(delta) { this.wood = Math.max(0, this.wood+delta); }
+        changeStone(delta) { this.stone = Math.max(0, this.stone+delta); }
+        changePopulation(delta) {
+            this.population = Math.max(0, this.population+delta);
+            if (this.cities.length && this.population>0) this.cities[0].population = this.population;
+        }
+    }
+
+    // ===================== GENERATOR MAPY =====================
+    function generateMap(size) {
+        let map = Array(size).fill().map(()=>Array(size).fill('water'));
+        let centers = Math.max(3, Math.floor(size/3));
+        for (let i=0; i<centers; i++) {
+            let cx = 2+Math.floor(Math.random()*(size-4));
+            let cy = 2+Math.floor(Math.random()*(size-4));
+            let rad = Math.floor(size/5);
+            for (let dx=-rad; dx<=rad; dx++) {
+                for (let dy=-rad; dy<=rad; dy++) {
+                    let x=cx+dx, y=cy+dy;
+                    if (x>=0 && y>=0 && x<size && y<size && Math.random()<0.6) {
+                        let r = Math.random();
+                        if (r<0.5) map[x][y]='plains';
+                        else if (r<0.7) map[x][y]='forest';
+                        else if (r<0.85) map[x][y]='mountain';
+                        else map[x][y]='swamp';
+                    }
+                }
+            }
+        }
+        for (let i=0;i<size;i++) for(let j=0;j<size;j++) if(map[i][j]==='water' && Math.random()<0.1) map[i][j]='plains';
+        return map;
+    }
+
+    // ===================== ZDARZENIA LOSOWE =====================
+    function randomEvent(civ) {
+        if (Math.random() > 0.4) return;
+        let events = [
+            { text:"🌾 Powódź! Zniszczyła część plonów.", act:()=>civ.changeFood(-Math.floor(civ.food/4)) },
+            { text:"🔥 Susza! Spadła produkcja żywności.", act:()=>civ.foodModifier=0.7 },
+            { text:"✨ Odkryto złoża kamienia! +15 kamienia.", act:()=>civ.changeStone(15) },
+            { text:"⚔️ Najazd barbarzyńców! Straciliśmy 2 populację.", act:()=>civ.changePopulation(-2) },
+            { text:"🌡️ Fala upałów! Plony spadają o 30% na 2 tury.", act:()=>civ.foodModifier=0.7 },
+            { text:"❄️ Sroga zima! Zużycie drewna na opał wzrasta o 50% na 2 tury.", act:()=>civ.woodHeatingModifier=1.5 },
+            { text:"🦗 Plaga szarańczy! -20 żywności.", act:()=>civ.changeFood(-20) },
+            { text:"🏹 Odkryto nowe pastwiska! +15 żywności.", act:()=>civ.changeFood(15) },
+            { text:"🌋 Trzęsienie ziemi! Zniszczyło 10 kamienia.", act:()=>civ.changeStone(-10) },
+            { text:"🔥 Pożar lasu! -15 drewna.", act:()=>civ.changeWood(-15) }
+        ];
+        let e = events[Math.floor(Math.random()*events.length)];
+        addLog(`⚠️ ZDARZENIE: ${e.text}`);
+        e.act();
+        // reset modyfikatorów po 2 turach (dla uproszczenia reset po turze, ale zostawmy)
+        setTimeout(()=>{ civ.foodModifier=1.0; civ.woodHeatingModifier=1.0; }, 2000);
+    }
+
+    // ===================== GLOBALNE ZMIENNE I UI =====================
+    let gameMap = null;
+    let civilization = null;
+    let currentTurn = 0;
+    let autoSettings = { trade:true, migrate:true, research:true, fullAuto:false };
+
+    function addLog(msg) {
+        let logDiv = document.getElementById('log-area');
+        let p = document.createElement('div');
+        p.innerHTML = msg;
+        logDiv.appendChild(p);
+        logDiv.scrollTop = logDiv.scrollHeight;
+        if(logDiv.children.length>30) logDiv.removeChild(logDiv.firstChild);
+    }
+
+    function updateUI() {
+        if (!civilization) return;
+        document.getElementById('turn-count').innerText = currentTurn;
+        document.getElementById('food-val').innerText = Math.floor(civilization.food);
+        document.getElementById('wood-val').innerText = Math.floor(civilization.wood);
+        document.getElementById('stone-val').innerText = Math.floor(civilization.stone);
+        document.getElementById('pop-val').innerText = civilization.population;
+        let techSpan = document.getElementById('tech-list');
+        techSpan.innerText = [...civilization.technologies].join(', ') || 'brak';
+        let citiesDiv = document.getElementById('cities-container');
+        if (civilization.cities.length===0) citiesDiv.innerHTML = 'brak';
+        else {
+            citiesDiv.innerHTML = civilization.cities.map((c,i)=>`<div>${i+1}. (${c.x},${c.y}) pop:${c.population}</div>`).join('');
+        }
+        drawMap();
+    }
+
+    function drawMap() {
+        let container = document.getElementById('map-grid');
+        let size = gameMap.length;
+        container.style.gridTemplateColumns = `repeat(${size}, 32px)`;
+        container.innerHTML = '';
+        for (let i=0; i<size; i++) {
+            for (let j=0; j<size; j++) {
+                let terrKey = gameMap[i][j];
+                let terr = TERRAINS[terrKey];
+                let isCity = civilization.cities.some(c=>c.x===i && c.y===j);
+                let cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.style.backgroundColor = terr.color;
+                cell.style.border = isCity ? '2px solid gold' : '1px solid #2c4a2a';
+                cell.innerText = isCity ? '🏠' : terr.symbol;
+                cell.title = `${terr.name} (${i},${j})`;
+                container.appendChild(cell);
+            }
+        }
+    }
+
+    function endTurn() {
+        if (!civilization) return;
+        currentTurn++;
+        updateUI();
+        addLog(`--- TURA ${currentTurn} ---`);
+        // 1. zbieranie
+        civilization.gatherResources();
+        // 2. ogrzewanie
+        civilization.consumeWoodForHeating();
+        // 3. konsumpcja jedzenia
+        civilization.consumeFood();
+        // 4. automatyzacje
+        if (autoSettings.fullAuto) {
+            civilization.autoTrade();
+            civilization.autoMigration();
+            // auto badania
+            let techs = { "Górnictwo":{stone:30}, "Tartak":{wood:25}, "Urbanizacja":{food:40,stone:20} };
+            for (let t in techs) if (!civilization.technologies.has(t)) {
+                civilization.researchTechnologyAuto(t, techs);
+                break;
+            }
+        } else {
+            if (autoSettings.trade) civilization.autoTrade();
+            if (autoSettings.migrate) civilization.autoMigration();
+            if (autoSettings.research) {
+                let techs = { "Górnictwo":{stone:30}, "Tartak":{wood:25}, "Urbanizacja":{food:40,stone:20} };
+                for (let t in techs) if (!civilization.technologies.has(t)) {
+                    if (civilization.researchTechnologyAuto(t, techs)) break;
+                }
+            }
+        }
+        // 5. wzrost populacji
+        civilization.growPopulation();
+        // 6. automatyczne zakładanie miast (zawsze)
+        civilization.autoFoundCity();
+        // 7. zdarzenie losowe co 5 tur
+        if (currentTurn % 5 === 0) randomEvent(civilization);
+        // 8. sprawdzenie końca gry
+        if (civilization.population <=0 || civilization.cities.length===0) {
+            addLog("💀 GRA SKOŃCZONA – Twoja cywilizacja upadła!");
+            document.getElementById('next-turn').disabled = true;
+            return;
+        }
+        updateUI();
+    }
+
+    function manualFoundCity() {
+        if (!civilization) return;
+        if (civilization.wood < 50 || civilization.population < 3) {
+            addLog("Brak surowców: potrzeba 50 drewna i 3 populacji.");
+            return;
+        }
+        let x = prompt("Podaj wiersz (0.."+(civilization.mapSize-1)+")", "0");
+        let y = prompt("Podaj kolumnę (0.."+(civilization.mapSize-1)+")", "0");
+        if (x===null || y===null) return;
+        x = parseInt(x); y = parseInt(y);
+        if (isNaN(x)||isNaN(y)) return;
+        if (civilization.isValidCityPosition(x,y)) {
+            civilization.addCity(x,y);
+            civilization.wood -= 50;
+            civilization.changePopulation(-3);
+            if (civilization.cities.length) civilization.cities[0].population -= 3;
+            civilization.recalcPopulation();
+            addLog(`🏙️ Założono nowe miasto na (${x},${y})!`);
+            updateUI();
+        } else {
+            addLog("Nie można założyć miasta na wodzie, górach lub istniejącym mieście.");
+        }
+    }
+
+    function manualResearch() {
+        if (!civilization) return;
+        let available = [];
+        let techs = { "Górnictwo":{stone:30}, "Tartak":{wood:25}, "Urbanizacja":{food:40,stone:20} };
+        for (let t in techs) {
+            if (!civilization.technologies.has(t)) {
+                let cost = techs[t];
+                if ((!cost.stone || civilization.stone>=cost.stone) && 
+                    (!cost.wood || civilization.wood>=cost.wood) &&
+                    (!cost.food || civilization.food>=cost.food)) {
+                    available.push(t);
+                }
+            }
+        }
+        if (available.length===0) { addLog("Brak dostępnych technologii lub brak surowców."); return; }
+        let msg = "Wybierz technologię:\n";
+        for (let i=0;i<available.length;i++) msg += `${i+1}. ${available[i]}\n`;
+        let choice = prompt(msg, "1");
+        if (!choice) return;
+        let idx = parseInt(choice)-1;
+        if (idx>=0 && idx<available.length) {
+            let tech = available[idx];
+            let cost = techs[tech];
+            if (cost.stone) civilization.stone -= cost.stone;
+            if (cost.wood) civilization.wood -= cost.wood;
+            if (cost.food) civilization.food -= cost.food;
+            civilization.technologies.add(tech);
+            addLog(`✅ Odkryto technologię: ${tech}!`);
+            updateUI();
+        }
+    }
+
+    function toggleAutoPanel() {
+        let panel = document.getElementById('auto-panel');
+        if (panel.style.display === 'none') {
+            document.getElementById('auto-trade').checked = autoSettings.trade;
+            document.getElementById('auto-migrate').checked = autoSettings.migrate;
+            document.getElementById('auto-research').checked = autoSettings.research;
+            document.getElementById('auto-full').checked = autoSettings.fullAuto;
+            panel.style.display = 'block';
+        } else {
+            autoSettings.trade = document.getElementById('auto-trade').checked;
+            autoSettings.migrate = document.getElementById('auto-migrate').checked;
+            autoSettings.research = document.getElementById('auto-research').checked;
+            autoSettings.fullAuto = document.getElementById('auto-full').checked;
+            panel.style.display = 'none';
+            addLog(`Automatyzacja: handel ${autoSettings.trade?'wł':'wył'}, migracje ${autoSettings.migrate?'wł':'wył'}, badania ${autoSettings.research?'wł':'wył'}, autopilot ${autoSettings.fullAuto?'wł':'wył'}`);
+        }
+    }
+
+    function newGame() {
+        let sizeOpt = prompt("Wybierz rozmiar mapy: 1 - Mała (10x10), 2 - Średnia (15x15)", "1");
+        let size = (sizeOpt==='2') ? 15 : 10;
+        gameMap = generateMap(size);
+        // znajdź startowe pole nadające się do miasta
+        let startX, startY;
+        for(let i=0;i<size;i++) {
+            let found=false;
+            for(let j=0;j<size;j++) {
+                let t = TERRAINS[gameMap[i][j]];
+                if(t.passable) { startX=i; startY=j; found=true; break; }
+            }
+            if(found) break;
+        }
+        civilization = new Civilization("Polanie", startX, startY, gameMap);
+        civilization.addCity(startX, startY);
+        currentTurn = 0;
+        updateUI();
+        addLog("Nowa gra rozpoczęta! Twoja stolica stoi na ("+startX+","+startY+"). Powodzenia!");
+        document.getElementById('next-turn').disabled = false;
+    }
+
+    // inicjalizacja
+    window.onload = () => {
+        newGame();
+        document.getElementById('next-turn').onclick = () => { endTurn(); };
+        document.getElementById('action-city').onclick = manualFoundCity;
+        document.getElementById('action-tech').onclick = manualResearch;
+        document.getElementById('auto-settings').onclick = toggleAutoPanel;
+        document.getElementById('close-auto').onclick = toggleAutoPanel;
+    };
+</script>
+</body>
+</html>
