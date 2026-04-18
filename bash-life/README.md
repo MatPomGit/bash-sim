@@ -33,3 +33,21 @@ Interaktywna, terminalowa symulacja 2D **Gry w życie Conwaya** napisana w Bashu
 - Licznik generacji i liczba żywych komórek w pasku statusu.
 - Dwa tryby brzegowe: zawijanie (torus) i twarde granice.
 - Obsługa wstawiania gotowych wzorców do środka planszy.
+
+
+## Uruchomienie na Windows
+
+Aby uruchomić wersję terminalową z poziomu Windows, użyj:
+
+```bat
+start.bat
+```
+
+## Uruchomienie w przeglądarce
+
+W katalogu `bash-life` znajduje się plik `index.html` z webową wersją symulacji.
+
+Najprościej:
+
+1. Otwórz `bash-life/index.html` w przeglądarce.
+2. Użyj przycisków lub skrótów klawiszowych widocznych pod planszą.
