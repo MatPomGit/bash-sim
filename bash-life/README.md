@@ -1,6 +1,11 @@
 # bash-life
 
-Interaktywny program terminalowy w Bashu symulujący 2D **Grę w życie Conwaya**.
+Interaktywna, terminalowa symulacja 2D **Gry w życie Conwaya** napisana w Bashu.
+
+## Struktura
+
+- `bash_life.sh` — interfejs terminalowy i obsługa wejścia użytkownika.
+- `life_engine.sh` — moduł silnika (reguły, plansza, wzorce).
 
 ## Uruchomienie
 
@@ -10,16 +15,21 @@ Interaktywny program terminalowy w Bashu symulujący 2D **Grę w życie Conwaya*
 
 ## Sterowanie
 
-- `q` — wyjście z programu
+- `q` — wyjście
 - `p` — pauza / wznowienie
 - `n` — pojedynczy krok (gdy pauza)
-- `r` — ponowne losowanie planszy
-- `c` — wyczyszczenie planszy
-- `+` / `-` — zwiększanie / zmniejszanie szybkości symulacji
+- `r` — losowanie nowej planszy
+- `c` — czyszczenie planszy
+- `w` — przełączanie krawędzi (`TORUS`/`BORDER`)
+- `g` — wstawienie wzorca **glider**
+- `b` — wstawienie wzorca **blinker**
+- `u` — wstawienie wzorca **pulsar**
+- `+` / `-` — zmiana prędkości symulacji
+- `h` — przełączanie rozszerzonej pomocy
 
-## Szczegóły implementacyjne
+## Co zostało rozbudowane
 
-- Plansza dopasowuje się do aktualnego rozmiaru terminala.
-- Ostatni wiersz jest paskiem statusu.
-- Krawędzie planszy są zawijane (topologia torusa).
-- Żywe komórki są rysowane znakiem `█`.
+- Wydzielenie logiki symulacji do osobnego modułu (`life_engine.sh`).
+- Licznik generacji i liczba żywych komórek w pasku statusu.
+- Dwa tryby brzegowe: zawijanie (torus) i twarde granice.
+- Obsługa wstawiania gotowych wzorców do środka planszy.
