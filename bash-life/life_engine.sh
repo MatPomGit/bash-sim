@@ -33,6 +33,15 @@ life_clear() {
   done
 }
 
+# Zlicza wszystkie żywe komórki na aktualnej planszy.
+life_count_live() {
+  local i live_count=0
+  for ((i = 0; i < LIFE_SIZE; i++)); do
+    live_count=$((live_count + LIFE_GRID[i]))
+  done
+  echo "$live_count"
+}
+
 # Losowo zasiewa planszę według gęstości procentowej.
 life_seed_random() {
   local density=$1
@@ -128,6 +137,18 @@ life_step() {
   done
 
   echo "$live_count"
+}
+
+# Zwraca skrótowy podpis planszy, pomocny przy wykrywaniu stabilizacji.
+life_grid_signature() {
+  local joined
+  printf -v joined '%s' "${LIFE_GRID[*]}"
+  if command -v md5sum >/dev/null 2>&1; then
+    printf '%s' "$joined" | md5sum | awk '{print $1}'
+  else
+    # Fallback dla środowisk bez md5sum.
+    printf '%s' "$joined"
+  fi
 }
 
 # Wstawia wzorzec 2D (lista stringów 0/1) z podanym przesunięciem.
