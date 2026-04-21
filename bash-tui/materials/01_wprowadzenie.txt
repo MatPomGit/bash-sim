@@ -1,0 +1,6 @@
+bash-tui — materiały pomocnicze
+
+- Strzałki LEWO/PRAWO: poruszanie po polach akcji.
+- Strzałki GÓRA/DÓŁ: przełączanie na listę materiałów i wybór pliku.
+- Enter: uruchomienie zaznaczonej akcji lub otwarcie zaznaczonego pliku.
+- q: powrót z podglądu pliku lub wyjście z aplikacji.
