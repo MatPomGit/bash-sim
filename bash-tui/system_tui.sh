@@ -290,6 +290,49 @@ render_action_bar() {
     done
 }
 
+# Rysuje sekcję plików materiałów pod główną ramką i podświetla aktywny wybór.
+render_materials_section() {
+    local selected_index="${1:-0}"
+    local focus_zone="${2:-actions}"
+    local material_files=()
+    local idx
+
+    mapfile -t material_files < <(discover_material_files)
+
+    printf "\n%sMateriały (↓ aby przejść, Enter aby otworzyć):%s\n" "$COLOR_INFO" "$COLOR_RESET"
+    if (( ${#material_files[@]} == 0 )); then
+        printf "  %sBrak plików w katalogu materials/.%s\n" "$COLOR_WARN" "$COLOR_RESET"
+        return
+    fi
+
+    for idx in "${!material_files[@]}"; do
+        if (( idx == selected_index )) && [[ "$focus_zone" == "files" ]]; then
+            printf "  %s> %s%s\n" "$COLOR_LABEL" "${material_files[$idx]#$(dirname "$0")/}" "$COLOR_RESET"
+        else
+            printf "    %s\n" "${material_files[$idx]#$(dirname "$0")/}"
+        fi
+    done
+}
+
+# Otwiera wybrany plik materiału przez less lub prosty podgląd tekstowy.
+open_material_file() {
+    local file_path="$1"
+    local key
+
+    if command -v less >/dev/null 2>&1; then
+        less -R "$file_path"
+    else
+        clear || true
+        cat "$file_path"
+        printf "\n--- Koniec pliku. Naciśnij [q], aby wrócić..."
+        while true; do
+            if key="$(read_input_key)"; then
+                [[ "$key" == "q" || "$key" == "Q" ]] && break
+            fi
+        done
+    fi
+}
+
 # Wyświetla interaktywny wybór i podgląd instrukcji tekstowych.
 show_instructions() {
     local instruction_files=()
@@ -297,15 +340,7 @@ show_instructions() {
     local key
     local idx
 
-    if [[ -n "$timeout" ]]; then
-        if ! read -r -s -n 1 -t "$timeout" key; then
-            return 1
-        fi
-    else
-        if ! read -r -s -n 1 key; then
-            return 1
-        fi
-    fi
+    mapfile -t instruction_files < <(discover_material_files)
 
     if (( ${#instruction_files[@]} == 0 )); then
         printf "\nBrak plików instrukcji (*.md, *.txt). Naciśnij [q], aby wrócić..."
@@ -370,6 +405,8 @@ show_instructions() {
 render_screen() {
     local refresh_hz="$1"
     local focused_index="${2:-0}"
+    local focus_zone="${3:-actions}"
+    local selected_material_index="${4:-0}"
     local version hostname kernel uptime_str load_avg ip_addr
     local cpu_percent cpu_info cpu_model cpu_cores
     local memory_stats mem_percent mem_used_mb mem_total_mb swap_percent swap_used_mb swap_total_mb
@@ -529,44 +566,22 @@ main() {
                     else
                         case "$focused_control" in
                             0)
-                                refresh_index="$(decrease_refresh_rate "$refresh_index")"
+                                show_instructions
                                 ;;
                             1)
-                                refresh_index="$(increase_refresh_rate "$refresh_index")"
+                                refresh_index="$(decrease_refresh_rate "$refresh_index")"
                                 ;;
                             2)
-                                continue
+                                refresh_index="$(increase_refresh_rate "$refresh_index")"
                                 ;;
                             3)
+                                continue
+                                ;;
+                            4)
                                 break
                                 ;;
                         esac
                     fi
-                    ;;
-                LEFT)
-                    focused_control="$(move_selection "$focused_control" "left" "${#ACTION_LABELS[@]}")"
-                    ;;
-                RIGHT)
-                    focused_control="$(move_selection "$focused_control" "right" "${#ACTION_LABELS[@]}")"
-                    ;;
-                ENTER)
-                    case "$focused_control" in
-                        0)
-                            show_instructions
-                            ;;
-                        1)
-                            refresh_index="$(decrease_refresh_rate "$refresh_index")"
-                            ;;
-                        2)
-                            refresh_index="$(increase_refresh_rate "$refresh_index")"
-                            ;;
-                        3)
-                            continue
-                            ;;
-                        4)
-                            break
-                            ;;
-                    esac
                     ;;
                 +)
                     refresh_index="$(increase_refresh_rate "$refresh_index")"
