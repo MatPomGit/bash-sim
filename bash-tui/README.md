@@ -5,10 +5,11 @@ Interaktywny terminalowy interfejs użytkownika (TUI) napisany w Bashu, pokazuj�
 ## Funkcje
 - Rozbudowana kolorystyka z progami stanu (zielony/żółty/czerwony) dla najważniejszych metryk.
 - Tryb pełnoekranowy (alt-screen + próba maksymalizacji okna terminala przy starcie).
-- Czytelny panel z metrykami: CPU, RAM, SWAP, dyski (`/`, `/home`), uptime, load average, host, kernel, IP, procesy, użytkownicy, ruch sieciowy oraz proces o największym użyciu CPU.
+- Czytelny panel z metrykami: CPU, RAM, SWAP, dyski (`/`, `/home`), uptime, load average, host, kernel, IP, procesy, użytkownicy, ruch sieciowy, temperatura CPU, liczba aktywnych połączeń TCP oraz proces o największym użyciu CPU.
 - Informacja o wersji automatycznie zwiększana przy każdym commicie (na podstawie `git rev-list --count HEAD`).
 - Informacja o autorach: **KIA, Katedra Informatyki i Automatyki, Politechnika Rzeszowska**.
-- Sterowanie klawiaturą: `q` (wyjście), `r` (natychmiastowe odświeżenie), `h` (interaktywne instrukcje).
+- Sterowanie klawiaturą: `q` (wyjście), `r` (natychmiastowe odświeżenie), `h` (interaktywne instrukcje), `+`/`-` (zmiana częstotliwości odświeżania).
+- Częstotliwość odświeżania ograniczona do poziomów: `0.2Hz`, `0.5Hz`, `1Hz`, `2Hz`, `3Hz`, `4Hz`, `5Hz`, `10Hz`.
 - Interaktywne instrukcje: wybór i podgląd plików tekstowych (`*.md`, `*.txt`) przez wbudowany wybór i `less`.
 
 ## Uruchomienie (Linux / macOS / WSL)
