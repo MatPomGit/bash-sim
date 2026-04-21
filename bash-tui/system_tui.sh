@@ -13,6 +13,7 @@ readonly AUTHORS="KIA, Katedra Informatyki i Automatyki, Politechnika Rzeszowska
 readonly BAR_WIDTH=28
 readonly REFRESH_HZ_LEVELS=("0.2" "0.5" "1" "2" "3" "4" "5" "10")
 readonly REFRESH_TIMEOUT_LEVELS=("5" "2" "1" "0.5" "0.333" "0.25" "0.2" "0.1")
+readonly ACTION_LABELS=("Instrukcje" "Wolniej" "Szybciej" "Odśwież" "Wyjście")
 
 # Definicja kolorów ANSI dla czytelniejszego interfejsu.
 readonly COLOR_RESET=$'\033[0m'
@@ -220,58 +221,140 @@ discover_instruction_files() {
     find "$(dirname "$0")" -maxdepth 2 -type f \( -iname '*.md' -o -iname '*.txt' \) | sort
 }
 
+# Odczytuje pojedynczy klawisz (w tym strzałki i Enter) z opcjonalnym timeoutem.
+read_input_key() {
+    local timeout="${1:-0}"
+    local key sequence
+
+    if ! read -r -s -n 1 -t "$timeout" key; then
+        return 1
+    fi
+
+    if [[ "$key" == $'\e' ]]; then
+        if read -r -s -n 2 -t 0.01 sequence; then
+            key+="$sequence"
+        fi
+    fi
+
+    case "$key" in
+        $'\e[A') printf "UP\n" ;;
+        $'\e[B') printf "DOWN\n" ;;
+        $'\e[C') printf "RIGHT\n" ;;
+        $'\e[D') printf "LEFT\n" ;;
+        "") printf "ENTER\n" ;;
+        $'\n'|$'\r') printf "ENTER\n" ;;
+        *) printf "%s\n" "$key" ;;
+    esac
+}
+
+# Zwraca indeks po przesunięciu w lewo lub prawo w zakresie 0..(count-1).
+move_selection() {
+    local current_index="$1"
+    local direction="$2"
+    local count="$3"
+
+    if [[ "$direction" == "left" ]]; then
+        if (( current_index > 0 )); then
+            echo $((current_index - 1))
+        else
+            echo "$current_index"
+        fi
+    else
+        if (( current_index < count - 1 )); then
+            echo $((current_index + 1))
+        else
+            echo "$current_index"
+        fi
+    fi
+}
+
+# Renderuje poziomy pasek akcji z podświetleniem aktualnie wybranego pola.
+render_action_bar() {
+    local focused_index="$1"
+    local idx
+
+    printf "%sPola (strzałki):%s " "$COLOR_INFO" "$COLOR_RESET"
+    for idx in "${!ACTION_LABELS[@]}"; do
+        if (( idx == focused_index )); then
+            printf "%s> %s <%s " "$COLOR_TITLE" "${ACTION_LABELS[$idx]}" "$COLOR_RESET"
+        else
+            printf "%s[ %s ]%s " "$COLOR_LABEL" "${ACTION_LABELS[$idx]}" "$COLOR_RESET"
+        fi
+    done
+}
+
 # Wyświetla interaktywny wybór i podgląd instrukcji tekstowych.
 show_instructions() {
     local instruction_files=()
-    local file_selection
-    local index=1
+    local selected_index=0
+    local key
+    local idx
 
     mapfile -t instruction_files < <(discover_instruction_files)
 
     if (( ${#instruction_files[@]} == 0 )); then
-        printf "\nBrak plików instrukcji (*.md, *.txt). Naciśnij dowolny klawisz, aby wrócić..."
-        read -r -n 1 _
+        printf "\nBrak plików instrukcji (*.md, *.txt). Naciśnij [q], aby wrócić..."
+        while true; do
+            if key="$(read_input_key)"; then
+                [[ "$key" == "q" || "$key" == "Q" ]] && return
+            fi
+        done
         return
     fi
 
     while true; do
         clear || true
         printf "%s=== Instrukcje interaktywne ===%s\n\n" "$COLOR_TITLE" "$COLOR_RESET"
-        printf "Wybierz numer pliku do podglądu (q = powrót):\n\n"
+        printf "Wybierz plik strzałkami góra/dół. Enter = podgląd, q = powrót.\n\n"
 
-        for file_path in "${instruction_files[@]}"; do
-            printf "  %2d) %s\n" "$index" "${file_path#$(dirname "$0")/}"
-            index=$((index + 1))
+        for idx in "${!instruction_files[@]}"; do
+            if (( idx == selected_index )); then
+                printf "  %s> %s%s\n" "$COLOR_LABEL" "${instruction_files[$idx]#$(dirname "$0")/}" "$COLOR_RESET"
+            else
+                printf "    %s\n" "${instruction_files[$idx]#$(dirname "$0")/}"
+            fi
         done
 
-        printf "\nTwój wybór: "
-        read -r file_selection
-
-        if [[ "$file_selection" =~ ^[Qq]$ ]]; then
-            return
+        if ! key="$(read_input_key)"; then
+            continue
         fi
 
-        if [[ "$file_selection" =~ ^[0-9]+$ ]] && (( file_selection >= 1 )) && (( file_selection <= ${#instruction_files[@]} )); then
-            if command -v less >/dev/null 2>&1; then
-                less -R "${instruction_files[file_selection - 1]}"
-            else
-                clear || true
-                cat "${instruction_files[file_selection - 1]}"
-                printf "\n--- Koniec pliku. Naciśnij dowolny klawisz, aby wrócić..."
-                read -r -n 1 _
-            fi
-        else
-            printf "\nNieprawidłowy wybór. Naciśnij dowolny klawisz, aby spróbować ponownie..."
-            read -r -n 1 _
-        fi
-
-        index=1
+        case "$key" in
+            q|Q)
+                return
+                ;;
+            UP)
+                if (( selected_index > 0 )); then
+                    selected_index=$((selected_index - 1))
+                fi
+                ;;
+            DOWN)
+                if (( selected_index < ${#instruction_files[@]} - 1 )); then
+                    selected_index=$((selected_index + 1))
+                fi
+                ;;
+            ENTER)
+                if command -v less >/dev/null 2>&1; then
+                    less -R "${instruction_files[$selected_index]}"
+                else
+                    clear || true
+                    cat "${instruction_files[$selected_index]}"
+                    printf "\n--- Koniec pliku. Naciśnij [q], aby wrócić..."
+                    while true; do
+                        if key="$(read_input_key)"; then
+                            [[ "$key" == "q" || "$key" == "Q" ]] && break
+                        fi
+                    done
+                fi
+                ;;
+        esac
     done
 }
 
 # Rysuje pojedynczy ekran TUI.
 render_screen() {
     local refresh_hz="$1"
+    local focused_index="${2:-0}"
     local version hostname kernel uptime_str load_avg ip_addr
     local cpu_percent cpu_info cpu_model cpu_cores
     local memory_stats mem_percent mem_used_mb mem_total_mb swap_percent swap_used_mb swap_total_mb
@@ -339,8 +422,9 @@ ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Dysk /:${COLOR_RESET}  $(build_pr
 ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Dysk /home:${COLOR_RESET} $(build_progress_bar "$disk_home_percent")  ${COLOR_INFO}(wolne: ${disk_home_free}K / ${disk_home_total}K)${COLOR_RESET}
 ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Sieć:${COLOR_RESET} ${COLOR_VALUE}${net_if}${COLOR_RESET}  ${COLOR_INFO}RX: ${net_rx}MB | TX: ${net_tx}MB${COLOR_RESET}
 ${COLOR_BORDER}╠════════════════════════════════════════════════════════════════════════════════════════╣${COLOR_RESET}
-${COLOR_BORDER}║${COLOR_RESET} ${COLOR_INFO}Sterowanie: [q] wyjście, [r] odśwież, [h] instrukcje interaktywne${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} $(render_action_bar "$focused_index")
 ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_INFO}Odświeżanie: ${refresh_hz}Hz  ([+] szybciej, [-] wolniej)${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_INFO}Enter: aktywuj pole | q: powrót/wyjście | h: szybkie instrukcje${COLOR_RESET}
 ${COLOR_BORDER}╚════════════════════════════════════════════════════════════════════════════════════════╝${COLOR_RESET}
 EOT
 }
@@ -350,6 +434,8 @@ main() {
     local refresh_index=2
     local refresh_hz
     local refresh_timeout
+    local focused_control=0
+    local key
 
     case "${1:-}" in
         --snapshot)
@@ -372,9 +458,9 @@ main() {
     while true; do
         refresh_hz="${REFRESH_HZ_LEVELS[$refresh_index]}"
         refresh_timeout="${REFRESH_TIMEOUT_LEVELS[$refresh_index]}"
-        render_screen "$refresh_hz"
+        render_screen "$refresh_hz" "$focused_control"
 
-        if read -r -s -n 1 -t "$refresh_timeout" key; then
+        if key="$(read_input_key "$refresh_timeout")"; then
             case "$key" in
                 q|Q)
                     break
@@ -384,6 +470,31 @@ main() {
                     ;;
                 h|H)
                     show_instructions
+                    ;;
+                LEFT)
+                    focused_control="$(move_selection "$focused_control" "left" "${#ACTION_LABELS[@]}")"
+                    ;;
+                RIGHT)
+                    focused_control="$(move_selection "$focused_control" "right" "${#ACTION_LABELS[@]}")"
+                    ;;
+                ENTER)
+                    case "$focused_control" in
+                        0)
+                            show_instructions
+                            ;;
+                        1)
+                            refresh_index="$(decrease_refresh_rate "$refresh_index")"
+                            ;;
+                        2)
+                            refresh_index="$(increase_refresh_rate "$refresh_index")"
+                            ;;
+                        3)
+                            continue
+                            ;;
+                        4)
+                            break
+                            ;;
+                    esac
                     ;;
                 +)
                     refresh_index="$(increase_refresh_rate "$refresh_index")"
