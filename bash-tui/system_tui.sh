@@ -13,7 +13,7 @@ readonly AUTHORS="KIA, Katedra Informatyki i Automatyki, Politechnika Rzeszowska
 readonly BAR_WIDTH=28
 readonly REFRESH_HZ_LEVELS=("0.2" "0.5" "1" "2" "3" "4" "5" "10")
 readonly REFRESH_TIMEOUT_LEVELS=("5" "2" "1" "0.5" "0.333" "0.25" "0.2" "0.1")
-readonly ACTION_LABELS=("Wolniej" "Szybciej" "Odśwież" "Wyjście")
+readonly ACTION_LABELS=("Instrukcje" "Wolniej" "Szybciej" "Odśwież" "Wyjście")
 
 # Definicja kolorów ANSI dla czytelniejszego interfejsu.
 readonly COLOR_RESET=$'\033[0m'
@@ -230,17 +230,11 @@ discover_material_files() {
 
 # Odczytuje pojedynczy klawisz (w tym strzałki i Enter) z opcjonalnym timeoutem.
 read_input_key() {
-    local timeout="${1:-}"
+    local timeout="${1:-0}"
     local key sequence
 
-    if [[ -n "$timeout" ]]; then
-        if ! read -r -s -n 1 -t "$timeout" key; then
-            return 1
-        fi
-    else
-        if ! read -r -s -n 1 key; then
-            return 1
-        fi
+    if ! read -r -s -n 1 -t "$timeout" key; then
+        return 1
     fi
 
     if [[ "$key" == $'\e' ]]; then
@@ -284,12 +278,11 @@ move_selection() {
 # Renderuje poziomy pasek akcji z podświetleniem aktualnie wybranego pola.
 render_action_bar() {
     local focused_index="$1"
-    local focus_zone="$2"
     local idx
 
     printf "%sPola (strzałki):%s " "$COLOR_INFO" "$COLOR_RESET"
     for idx in "${!ACTION_LABELS[@]}"; do
-        if [[ "$focus_zone" == "actions" ]] && (( idx == focused_index )); then
+        if (( idx == focused_index )); then
             printf "%s> %s <%s " "$COLOR_TITLE" "${ACTION_LABELS[$idx]}" "$COLOR_RESET"
         else
             printf "%s[ %s ]%s " "$COLOR_LABEL" "${ACTION_LABELS[$idx]}" "$COLOR_RESET"
@@ -297,55 +290,79 @@ render_action_bar() {
     done
 }
 
-# Otwiera wskazany plik materiałów z bezpiecznym fallbackiem, gdy less jest niedostępny.
-open_material_file() {
-    local file_path="$1"
+# Wyświetla interaktywny wybór i podgląd instrukcji tekstowych.
+show_instructions() {
+    local instruction_files=()
+    local selected_index=0
     local key
+    local idx
 
-    if [[ ! -f "$file_path" ]]; then
-        return
+    if [[ -n "$timeout" ]]; then
+        if ! read -r -s -n 1 -t "$timeout" key; then
+            return 1
+        fi
+    else
+        if ! read -r -s -n 1 key; then
+            return 1
+        fi
     fi
 
-    if command -v less >/dev/null 2>&1; then
-        less -R "$file_path"
-    else
-        printf '\033[H\033[J'
-        cat "$file_path"
-        printf "\n--- Koniec pliku. Naciśnij [q], aby wrócić..."
+    if (( ${#instruction_files[@]} == 0 )); then
+        printf "\nBrak plików instrukcji (*.md, *.txt). Naciśnij [q], aby wrócić..."
         while true; do
             if key="$(read_input_key)"; then
-                [[ "$key" == "q" || "$key" == "Q" ]] && break
+                [[ "$key" == "q" || "$key" == "Q" ]] && return
             fi
         done
-    fi
-}
-
-# Rysuje sekcję materiałów wraz z podświetleniem wybranego pliku.
-render_materials_section() {
-    local selected_material_index="$1"
-    local focus_zone="$2"
-    local materials_dir
-    local material_files=()
-    local idx
-    local display_name
-
-    materials_dir="$(dirname "$0")/materials"
-    mapfile -t material_files < <(discover_material_files)
-
-    printf "%sMateriały (%s):%s\n" "$COLOR_LABEL" "${materials_dir#$(dirname "$0")/}" "$COLOR_RESET"
-
-    if (( ${#material_files[@]} == 0 )); then
-        printf "  %sBrak plików .md/.txt w katalogu materials.%s\n" "$COLOR_WARN" "$COLOR_RESET"
         return
     fi
 
-    for idx in "${!material_files[@]}"; do
-        display_name="${material_files[$idx]##*/}"
-        if [[ "$focus_zone" == "files" ]] && (( idx == selected_material_index )); then
-            printf "  %s> %s%s\n" "$COLOR_TITLE" "$display_name" "$COLOR_RESET"
-        else
-            printf "    %s\n" "$display_name"
+    while true; do
+        clear || true
+        printf "%s=== Instrukcje interaktywne ===%s\n\n" "$COLOR_TITLE" "$COLOR_RESET"
+        printf "Wybierz plik strzałkami góra/dół. Enter = podgląd, q = powrót.\n\n"
+
+        for idx in "${!instruction_files[@]}"; do
+            if (( idx == selected_index )); then
+                printf "  %s> %s%s\n" "$COLOR_LABEL" "${instruction_files[$idx]#$(dirname "$0")/}" "$COLOR_RESET"
+            else
+                printf "    %s\n" "${instruction_files[$idx]#$(dirname "$0")/}"
+            fi
+        done
+
+        if ! key="$(read_input_key)"; then
+            continue
         fi
+
+        case "$key" in
+            q|Q)
+                return
+                ;;
+            UP)
+                if (( selected_index > 0 )); then
+                    selected_index=$((selected_index - 1))
+                fi
+                ;;
+            DOWN)
+                if (( selected_index < ${#instruction_files[@]} - 1 )); then
+                    selected_index=$((selected_index + 1))
+                fi
+                ;;
+            ENTER)
+                if command -v less >/dev/null 2>&1; then
+                    less -R "${instruction_files[$selected_index]}"
+                else
+                    clear || true
+                    cat "${instruction_files[$selected_index]}"
+                    printf "\n--- Koniec pliku. Naciśnij [q], aby wrócić..."
+                    while true; do
+                        if key="$(read_input_key)"; then
+                            [[ "$key" == "q" || "$key" == "Q" ]] && break
+                        fi
+                    done
+                fi
+                ;;
+        esac
     done
 }
 
@@ -353,8 +370,6 @@ render_materials_section() {
 render_screen() {
     local refresh_hz="$1"
     local focused_index="${2:-0}"
-    local focus_zone="${3:-actions}"
-    local selected_material_index="${4:-0}"
     local version hostname kernel uptime_str load_avg ip_addr
     local cpu_percent cpu_info cpu_model cpu_cores
     local memory_stats mem_percent mem_used_mb mem_total_mb swap_percent swap_used_mb swap_total_mb
@@ -422,9 +437,9 @@ ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Dysk /:${COLOR_RESET}  $(build_pr
 ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Dysk /home:${COLOR_RESET} $(build_progress_bar "$disk_home_percent")  ${COLOR_INFO}(wolne: ${disk_home_free}K / ${disk_home_total}K)${COLOR_RESET}
 ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Sieć:${COLOR_RESET} ${COLOR_VALUE}${net_if}${COLOR_RESET}  ${COLOR_INFO}RX: ${net_rx}MB | TX: ${net_tx}MB${COLOR_RESET}
 ${COLOR_BORDER}╠════════════════════════════════════════════════════════════════════════════════════════╣${COLOR_RESET}
-${COLOR_BORDER}║${COLOR_RESET} $(render_action_bar "$focused_index" "$focus_zone")
+${COLOR_BORDER}║${COLOR_RESET} $(render_action_bar "$focused_index")
 ${COLOR_BORDER}║${COLOR_RESET} ${COLOR_INFO}Odświeżanie: ${refresh_hz}Hz  ([+] szybciej, [-] wolniej)${COLOR_RESET}
-${COLOR_BORDER}║${COLOR_RESET} ${COLOR_INFO}Enter: aktywuj pole/pliki | q: powrót/wyjście${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_INFO}Enter: aktywuj pole | q: powrót/wyjście | h: szybkie instrukcje${COLOR_RESET}
 ${COLOR_BORDER}╚════════════════════════════════════════════════════════════════════════════════════════╝${COLOR_RESET}
 EOT
     render_materials_section "$selected_material_index" "$focus_zone"
@@ -527,6 +542,31 @@ main() {
                                 ;;
                         esac
                     fi
+                    ;;
+                LEFT)
+                    focused_control="$(move_selection "$focused_control" "left" "${#ACTION_LABELS[@]}")"
+                    ;;
+                RIGHT)
+                    focused_control="$(move_selection "$focused_control" "right" "${#ACTION_LABELS[@]}")"
+                    ;;
+                ENTER)
+                    case "$focused_control" in
+                        0)
+                            show_instructions
+                            ;;
+                        1)
+                            refresh_index="$(decrease_refresh_rate "$refresh_index")"
+                            ;;
+                        2)
+                            refresh_index="$(increase_refresh_rate "$refresh_index")"
+                            ;;
+                        3)
+                            continue
+                            ;;
+                        4)
+                            break
+                            ;;
+                    esac
                     ;;
                 +)
                     refresh_index="$(increase_refresh_rate "$refresh_index")"
