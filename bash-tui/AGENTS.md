@@ -14,16 +14,22 @@ Tworzymy i rozwijamy prosty, stabilny oraz czytelny program typu TUI w Bashu do 
 4. Unikaj zewnętrznych zależności, jeśli da się użyć narzędzi standardowych Linux/Bash.
 5. Dbaj o poprawne sprzątanie terminala (przywrócenie kursora i trybu ekranu) przez `trap`.
 6. Nie pogarszaj czytelności interfejsu — układ powinien być intuicyjny i spójny.
+7. Gdy dodajesz funkcje interaktywne (np. instrukcje), zapewnij bezpieczny fallback dla środowisk bez `less`.
 
 ## Wersjonowanie
 - Wersja ma być automatycznie zwiększana przy każdym commicie.
 - Preferowane rozwiązanie: wyliczanie na podstawie liczby commitów Git (`git rev-list --count HEAD`).
 
+## Zgodność platformowa
+- Główna implementacja pozostaje w Bash (`system_tui.sh`).
+- Dla Windows utrzymuj prosty launcher `.bat` (`system_tui.bat`) uruchamiający skrypt Bash przez Git for Windows.
+
 ## Weryfikacja zmian
 Przed zakończeniem pracy uruchom co najmniej:
 ```bash
 bash -n bash-tui/system_tui.sh
-bash-tui/system_tui.sh --snapshot
+TERM=xterm bash-tui/system_tui.sh --snapshot
+bash-tui/system_tui.sh --list-instructions
 ```
 
 ## Czego nie robić

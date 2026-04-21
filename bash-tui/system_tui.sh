@@ -8,9 +8,21 @@ set -o nounset
 set -o pipefail
 
 readonly APP_NAME="bash-tui"
-readonly VERSION_PREFIX="1.0"
+readonly VERSION_PREFIX="1.1"
 readonly AUTHORS="KIA, Katedra Informatyki i Automatyki, Politechnika Rzeszowska"
 readonly REFRESH_SECONDS=1
+readonly BAR_WIDTH=28
+
+# Definicja kolorów ANSI dla czytelniejszego interfejsu.
+readonly COLOR_RESET=$'\033[0m'
+readonly COLOR_BORDER=$'\033[38;5;39m'
+readonly COLOR_TITLE=$'\033[1;38;5;45m'
+readonly COLOR_LABEL=$'\033[1;38;5;81m'
+readonly COLOR_VALUE=$'\033[38;5;230m'
+readonly COLOR_INFO=$'\033[38;5;159m'
+readonly COLOR_OK=$'\033[1;38;5;82m'
+readonly COLOR_WARN=$'\033[1;38;5;220m'
+readonly COLOR_CRIT=$'\033[1;38;5;196m'
 
 # Zwraca automatycznie zwiększaną wersję opartą o liczbę commitów w repozytorium.
 get_version() {
@@ -38,9 +50,22 @@ setup_terminal() {
     clear || true
 }
 
+# Dobiera kolor stanu na podstawie wartości procentowej.
+get_status_color() {
+    local percent="$1"
+    if (( percent < 60 )); then
+        printf "%s" "$COLOR_OK"
+    elif (( percent < 85 )); then
+        printf "%s" "$COLOR_WARN"
+    else
+        printf "%s" "$COLOR_CRIT"
+    fi
+}
+
 # Zwraca obciążenie CPU w procentach.
 get_cpu_usage() {
-    local cpu_line idle total busy
+    local cpu_line total busy total2 busy2 total_diff busy_diff
+
     cpu_line="$(grep '^cpu ' /proc/stat)"
     read -r _ user nice system idle iowait irq softirq steal _ <<<"$cpu_line"
     total=$((user + nice + system + idle + iowait + irq + softirq + steal))
@@ -50,11 +75,9 @@ get_cpu_usage() {
 
     cpu_line="$(grep '^cpu ' /proc/stat)"
     read -r _ user2 nice2 system2 idle2 iowait2 irq2 softirq2 steal2 _ <<<"$cpu_line"
-    local total2 busy2
     total2=$((user2 + nice2 + system2 + idle2 + iowait2 + irq2 + softirq2 + steal2))
     busy2=$((total2 - idle2 - iowait2))
 
-    local total_diff busy_diff
     total_diff=$((total2 - total))
     busy_diff=$((busy2 - busy))
 
@@ -65,36 +88,152 @@ get_cpu_usage() {
     fi
 }
 
-# Buduje pasek postępu dla procentów.
+# Buduje kolorowy pasek postępu dla wartości procentowej.
 build_progress_bar() {
     local percent="$1"
-    local width=30
+    local width="$BAR_WIDTH"
     local filled=$((percent * width / 100))
     local empty=$((width - filled))
-    printf "["
-    printf "%${filled}s" "" | tr ' ' '#'
-    printf "%${empty}s" "" | tr ' ' '.'
-    printf "] %3s%%" "$percent"
+    local bar_color
+
+    bar_color="$(get_status_color "$percent")"
+
+    printf "%s[" "$bar_color"
+    printf "%${filled}s" "" | tr ' ' '█'
+    printf "%s" "$COLOR_BORDER"
+    printf "%${empty}s" "" | tr ' ' '░'
+    printf "%s] %3s%%%s" "$bar_color" "$percent" "$COLOR_RESET"
 }
 
-# Zwraca wykorzystanie pamięci RAM w procentach.
-get_memory_usage() {
-    local total available used percent
-    total="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
-    available="$(awk '/MemAvailable/ {print $2}' /proc/meminfo)"
-    used=$((total - available))
-    percent=$((100 * used / total))
-    echo "$percent"
+# Zwraca wykorzystanie pamięci RAM i SWAP w procentach oraz MB.
+get_memory_stats() {
+    local mem_total mem_available mem_used mem_percent
+    local swap_total swap_free swap_used swap_percent
+
+    mem_total="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+    mem_available="$(awk '/MemAvailable/ {print $2}' /proc/meminfo)"
+    mem_used=$((mem_total - mem_available))
+    mem_percent=$((100 * mem_used / mem_total))
+
+    swap_total="$(awk '/SwapTotal/ {print $2}' /proc/meminfo)"
+    swap_free="$(awk '/SwapFree/ {print $2}' /proc/meminfo)"
+    if (( swap_total > 0 )); then
+        swap_used=$((swap_total - swap_free))
+        swap_percent=$((100 * swap_used / swap_total))
+    else
+        swap_used=0
+        swap_percent=0
+    fi
+
+    printf "%s;%s;%s;%s;%s;%s\n" \
+        "$mem_percent" "$((mem_used / 1024))" "$((mem_total / 1024))" \
+        "$swap_percent" "$((swap_used / 1024))" "$((swap_total / 1024))"
 }
 
-# Zwraca wykorzystanie głównego systemu plików w procentach.
-get_disk_usage() {
-    df -P / | awk 'NR==2 {gsub("%", "", $5); print $5}'
+# Zwraca wykorzystanie systemu plików dla wskazanego punktu montowania.
+get_disk_stats() {
+    local mount_point="$1"
+    df -P "$mount_point" | awk 'NR==2 {gsub("%", "", $5); printf "%s;%s;%s", $5, $4, $2}'
+}
+
+# Zwraca nazwę modelu CPU i liczbę rdzeni logicznych.
+get_cpu_info() {
+    local cpu_model cpu_cores
+    cpu_model="$(awk -F': ' '/model name/ {print $2; exit}' /proc/cpuinfo)"
+    cpu_cores="$(nproc --all 2>/dev/null || echo "?")"
+    printf "%s;%s" "${cpu_model:-nieznany}" "$cpu_cores"
+}
+
+# Zwraca liczbę procesów oraz aktualnie zalogowanych użytkowników.
+get_process_and_users() {
+    local process_count user_count
+    process_count="$(ps -e --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+    user_count="$(who 2>/dev/null | wc -l | tr -d ' ')"
+    printf "%s;%s" "$process_count" "$user_count"
+}
+
+# Zwraca informacje o transferze sieciowym (RX/TX w MB) na pierwszym aktywnym interfejsie.
+get_network_stats() {
+    local default_if rx_bytes tx_bytes
+    default_if="$(ip route 2>/dev/null | awk '/default/ {print $5; exit}')"
+    if [[ -z "$default_if" ]]; then
+        echo "brak;0;0"
+        return
+    fi
+
+    read -r rx_bytes tx_bytes < <(awk -F '[: ]+' -v iface="$default_if" '$1 == iface {print $3, $11}' /proc/net/dev)
+    printf "%s;%s;%s" "$default_if" "$((rx_bytes / 1024 / 1024))" "$((tx_bytes / 1024 / 1024))"
+}
+
+# Zwraca nazwę procesu o najwyższym użyciu CPU.
+get_top_cpu_process() {
+    ps -eo comm,%cpu --sort=-%cpu --no-headers 2>/dev/null | awk '$1 != "ps" && $1 != "awk" {print $1 " (" $2 "%)"; exit}'
+}
+
+# Wyszukuje pliki instrukcji obsługiwane przez podgląd interaktywny.
+discover_instruction_files() {
+    find "$(dirname "$0")" -maxdepth 2 -type f \( -iname '*.md' -o -iname '*.txt' \) | sort
+}
+
+# Wyświetla interaktywny wybór i podgląd instrukcji tekstowych.
+show_instructions() {
+    local instruction_files=()
+    local file_selection
+    local index=1
+
+    mapfile -t instruction_files < <(discover_instruction_files)
+
+    if (( ${#instruction_files[@]} == 0 )); then
+        printf "\nBrak plików instrukcji (*.md, *.txt). Naciśnij dowolny klawisz, aby wrócić..."
+        read -r -n 1 _
+        return
+    fi
+
+    while true; do
+        clear || true
+        printf "%s=== Instrukcje interaktywne ===%s\n\n" "$COLOR_TITLE" "$COLOR_RESET"
+        printf "Wybierz numer pliku do podglądu (q = powrót):\n\n"
+
+        for file_path in "${instruction_files[@]}"; do
+            printf "  %2d) %s\n" "$index" "${file_path#$(dirname "$0")/}"
+            index=$((index + 1))
+        done
+
+        printf "\nTwój wybór: "
+        read -r file_selection
+
+        if [[ "$file_selection" =~ ^[Qq]$ ]]; then
+            return
+        fi
+
+        if [[ "$file_selection" =~ ^[0-9]+$ ]] && (( file_selection >= 1 )) && (( file_selection <= ${#instruction_files[@]} )); then
+            if command -v less >/dev/null 2>&1; then
+                less -R "${instruction_files[file_selection - 1]}"
+            else
+                clear || true
+                cat "${instruction_files[file_selection - 1]}"
+                printf "\n--- Koniec pliku. Naciśnij dowolny klawisz, aby wrócić..."
+                read -r -n 1 _
+            fi
+        else
+            printf "\nNieprawidłowy wybór. Naciśnij dowolny klawisz, aby spróbować ponownie..."
+            read -r -n 1 _
+        fi
+
+        index=1
+    done
 }
 
 # Rysuje pojedynczy ekran TUI.
 render_screen() {
-    local version hostname kernel uptime_str load_avg ip_addr cpu_percent memory_percent disk_percent
+    local version hostname kernel uptime_str load_avg ip_addr
+    local cpu_percent cpu_info cpu_model cpu_cores
+    local memory_stats mem_percent mem_used_mb mem_total_mb swap_percent swap_used_mb swap_total_mb
+    local disk_root_stats disk_home_stats disk_root_percent disk_root_free disk_root_total
+    local disk_home_percent disk_home_free disk_home_total
+    local process_users process_count user_count
+    local net_stats net_if net_rx net_tx
+    local top_process
 
     version="$(get_version)"
     hostname="$(hostname)"
@@ -102,39 +241,72 @@ render_screen() {
     uptime_str="$(uptime -p 2>/dev/null || true)"
     load_avg="$(awk '{print $1" "$2" "$3}' /proc/loadavg)"
     ip_addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
     cpu_percent="$(get_cpu_usage)"
-    memory_percent="$(get_memory_usage)"
-    disk_percent="$(get_disk_usage)"
+    cpu_info="$(get_cpu_info)"
+    IFS=';' read -r cpu_model cpu_cores <<<"$cpu_info"
+
+    memory_stats="$(get_memory_stats)"
+    IFS=';' read -r mem_percent mem_used_mb mem_total_mb swap_percent swap_used_mb swap_total_mb <<<"$memory_stats"
+
+    disk_root_stats="$(get_disk_stats /)"
+    IFS=';' read -r disk_root_percent disk_root_free disk_root_total <<<"$disk_root_stats"
+
+    if [[ -d /home ]]; then
+        disk_home_stats="$(get_disk_stats /home)"
+        IFS=';' read -r disk_home_percent disk_home_free disk_home_total <<<"$disk_home_stats"
+    else
+        disk_home_percent=0
+        disk_home_free=0
+        disk_home_total=0
+    fi
+
+    process_users="$(get_process_and_users)"
+    IFS=';' read -r process_count user_count <<<"$process_users"
+
+    net_stats="$(get_network_stats)"
+    IFS=';' read -r net_if net_rx net_tx <<<"$net_stats"
+
+    top_process="$(get_top_cpu_process)"
 
     clear || true
     cat <<EOT
-╔════════════════════════════════════════════════════════════════════════════╗
-║                              MONITOR SYSTEMU                              ║
-╠════════════════════════════════════════════════════════════════════════════╣
-║ Aplikacja: ${APP_NAME}
-║ Wersja (auto): ${version}
-║ Autorzy: ${AUTHORS}
-╠════════════════════════════════════════════════════════════════════════════╣
-║ Host: ${hostname}
-║ Jądro systemu: ${kernel}
-║ Czas działania: ${uptime_str}
-║ Średnie obciążenie (1m/5m/15m): ${load_avg}
-║ Adres IP: ${ip_addr:-brak}
-╠════════════════════════════════════════════════════════════════════════════╣
-║ CPU:     $(build_progress_bar "$cpu_percent")
-║ RAM:     $(build_progress_bar "$memory_percent")
-║ Dysk /:  $(build_progress_bar "$disk_percent")
-╠════════════════════════════════════════════════════════════════════════════╣
-║ Sterowanie: [q] wyjście, [r] odśwież natychmiast
-╚════════════════════════════════════════════════════════════════════════════╝
+${COLOR_BORDER}╔════════════════════════════════════════════════════════════════════════════════════════╗${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET}${COLOR_TITLE}                                  MONITOR SYSTEMU                                  ${COLOR_RESET}${COLOR_BORDER}║${COLOR_RESET}
+${COLOR_BORDER}╠════════════════════════════════════════════════════════════════════════════════════════╣${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Aplikacja:${COLOR_RESET} ${COLOR_VALUE}${APP_NAME}${COLOR_RESET}    ${COLOR_LABEL}Wersja (auto):${COLOR_RESET} ${COLOR_VALUE}${version}${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Autorzy:${COLOR_RESET} ${COLOR_VALUE}${AUTHORS}${COLOR_RESET}
+${COLOR_BORDER}╠════════════════════════════════════════════════════════════════════════════════════════╣${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Host:${COLOR_RESET} ${COLOR_VALUE}${hostname}${COLOR_RESET}    ${COLOR_LABEL}Jądro:${COLOR_RESET} ${COLOR_VALUE}${kernel}${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}IP:${COLOR_RESET} ${COLOR_VALUE}${ip_addr:-brak}${COLOR_RESET}    ${COLOR_LABEL}Czas działania:${COLOR_RESET} ${COLOR_VALUE}${uptime_str}${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Load avg:${COLOR_RESET} ${COLOR_VALUE}${load_avg}${COLOR_RESET}    ${COLOR_LABEL}Procesy/Użytkownicy:${COLOR_RESET} ${COLOR_VALUE}${process_count}/${user_count}${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}CPU model:${COLOR_RESET} ${COLOR_VALUE}${cpu_model}${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Rdzenie logiczne:${COLOR_RESET} ${COLOR_VALUE}${cpu_cores}${COLOR_RESET}    ${COLOR_LABEL}Top CPU process:${COLOR_RESET} ${COLOR_VALUE}${top_process:-brak}${COLOR_RESET}
+${COLOR_BORDER}╠════════════════════════════════════════════════════════════════════════════════════════╣${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}CPU:${COLOR_RESET}     $(build_progress_bar "$cpu_percent")
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}RAM:${COLOR_RESET}     $(build_progress_bar "$mem_percent")  ${COLOR_INFO}(${mem_used_mb}MB / ${mem_total_mb}MB)${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}SWAP:${COLOR_RESET}    $(build_progress_bar "$swap_percent")  ${COLOR_INFO}(${swap_used_mb}MB / ${swap_total_mb}MB)${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Dysk /:${COLOR_RESET}  $(build_progress_bar "$disk_root_percent")  ${COLOR_INFO}(wolne: ${disk_root_free}K / ${disk_root_total}K)${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Dysk /home:${COLOR_RESET} $(build_progress_bar "$disk_home_percent")  ${COLOR_INFO}(wolne: ${disk_home_free}K / ${disk_home_total}K)${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_LABEL}Sieć:${COLOR_RESET} ${COLOR_VALUE}${net_if}${COLOR_RESET}  ${COLOR_INFO}RX: ${net_rx}MB | TX: ${net_tx}MB${COLOR_RESET}
+${COLOR_BORDER}╠════════════════════════════════════════════════════════════════════════════════════════╣${COLOR_RESET}
+${COLOR_BORDER}║${COLOR_RESET} ${COLOR_INFO}Sterowanie: [q] wyjście, [r] odśwież, [h] instrukcje interaktywne${COLOR_RESET}
+${COLOR_BORDER}╚════════════════════════════════════════════════════════════════════════════════════════╝${COLOR_RESET}
 EOT
 }
 
 main() {
     local mode="interactive"
-    if [[ "${1:-}" == "--snapshot" ]]; then
-        mode="snapshot"
-    fi
+
+    case "${1:-}" in
+        --snapshot)
+            mode="snapshot"
+            ;;
+        --list-instructions)
+            discover_instruction_files
+            return 0
+            ;;
+    esac
 
     if [[ "$mode" == "snapshot" ]]; then
         render_screen
@@ -154,6 +326,9 @@ main() {
                     ;;
                 r|R)
                     continue
+                    ;;
+                h|H)
+                    show_instructions
                     ;;
             esac
         fi
