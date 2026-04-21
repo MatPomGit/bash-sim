@@ -297,7 +297,10 @@ render_materials_section() {
     local material_files=()
     local idx
 
-    mapfile -t material_files < <(discover_material_files)
+    material_files=()
+    while IFS= read -r material_file; do
+        material_files+=("$material_file")
+    done < <(discover_material_files)
 
     printf "\n%sMateriały (↓ aby przejść, Enter aby otworzyć):%s\n" "$COLOR_INFO" "$COLOR_RESET"
     if (( ${#material_files[@]} == 0 )); then
@@ -340,7 +343,10 @@ show_instructions() {
     local key
     local idx
 
-    mapfile -t instruction_files < <(discover_material_files)
+    instruction_files=()
+    while IFS= read -r instruction_file; do
+        instruction_files+=("$instruction_file")
+    done < <(discover_material_files)
 
     if (( ${#instruction_files[@]} == 0 )); then
         printf "\nBrak plików instrukcji (*.md, *.txt). Naciśnij [q], aby wrócić..."
@@ -510,10 +516,18 @@ main() {
 
     trap cleanup_terminal EXIT INT TERM
     setup_terminal
-    mapfile -t material_files < <(discover_material_files)
+    # Ładuje listę materiałów na starcie, aby poprawnie zainicjalizować indeks wyboru.
+    material_files=()
+    while IFS= read -r material_file; do
+        material_files+=("$material_file")
+    done < <(discover_material_files)
 
     while true; do
-        mapfile -t material_files < <(discover_material_files)
+        # Odświeża listę materiałów w każdej iteracji (bez użycia mapfile dla zgodności z Bash 3.x).
+        material_files=()
+        while IFS= read -r material_file; do
+            material_files+=("$material_file")
+        done < <(discover_material_files)
         if (( ${#material_files[@]} == 0 )); then
             selected_material_index=0
         elif (( selected_material_index > ${#material_files[@]} - 1 )); then
