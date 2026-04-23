@@ -14,6 +14,7 @@ readonly BAR_WIDTH=28
 readonly REFRESH_HZ_LEVELS=("0.2" "0.5" "1" "2" "3" "4" "5" "10")
 readonly REFRESH_TIMEOUT_LEVELS=("5" "2" "1" "0.5" "0.333" "0.25" "0.2" "0.1")
 readonly ACTION_LABELS=("Instrukcje" "Wolniej" "Szybciej" "Odśwież" "Wyjście")
+readonly LAB_MODULES=("1" "2" "3" "4" "5" "6")
 
 # Definicja kolorów ANSI dla czytelniejszego interfejsu.
 readonly COLOR_RESET=$'\033[0m'
@@ -216,16 +217,41 @@ get_established_tcp_connections() {
     echo $((tcp4_count + tcp6_count))
 }
 
+# Zwraca katalog, w którym znajduje się skrypt.
+get_script_dir() {
+    dirname "$0"
+}
+
+# Buduje ścieżkę do pliku instrukcji laboratoryjnej dla wskazanego modułu.
+get_lab_module_file() {
+    local module_number="$1"
+    printf "%s/materials/lab_%02d.md\n" "$(get_script_dir)" "$module_number"
+}
+
+# Zwraca listę istniejących plików modułów laboratoryjnych (1..6).
+list_lab_module_files() {
+    local module_number module_file
+    for module_number in "${LAB_MODULES[@]}"; do
+        module_file="$(get_lab_module_file "$module_number")"
+        if [[ -f "$module_file" ]]; then
+            printf "%s\n" "$module_file"
+        fi
+    done
+}
+
 # Wyszukuje pliki instrukcji obsługiwane przez podgląd interaktywny.
 discover_material_files() {
     local materials_dir
-    materials_dir="$(dirname "$0")/materials"
+    materials_dir="$(get_script_dir)/materials"
 
     if [[ ! -d "$materials_dir" ]]; then
         return
     fi
 
-    find "$materials_dir" -maxdepth 1 -type f \( -iname '*.md' -o -iname '*.txt' \) | sort
+    {
+        list_lab_module_files
+        find "$materials_dir" -maxdepth 1 -type f -iname '*.txt' | sort
+    } | awk '!seen[$0]++'
 }
 
 # Odczytuje pojedynczy klawisz (w tym strzałki i Enter) z opcjonalnym timeoutem.
@@ -310,9 +336,9 @@ render_materials_section() {
 
     for idx in "${!material_files[@]}"; do
         if (( idx == selected_index )) && [[ "$focus_zone" == "files" ]]; then
-            printf "  %s> %s%s\n" "$COLOR_LABEL" "${material_files[$idx]#$(dirname "$0")/}" "$COLOR_RESET"
+            printf "  %s> %s%s\n" "$COLOR_LABEL" "${material_files[$idx]#$(get_script_dir)/}" "$COLOR_RESET"
         else
-            printf "    %s\n" "${material_files[$idx]#$(dirname "$0")/}"
+            printf "    %s\n" "${material_files[$idx]#$(get_script_dir)/}"
         fi
     done
 }
@@ -336,38 +362,64 @@ open_material_file() {
     fi
 }
 
-# Wyświetla interaktywny wybór i podgląd instrukcji tekstowych.
+# Wyświetla pojedynczą stronę modułu laboratoryjnego bez zależności od less.
+render_lab_module_page() {
+    local module_number="$1"
+    local module_file="$2"
+    local key
+
+    clear || true
+    printf "%s=== Instrukcja laboratoryjna %s ===%s\n\n" "$COLOR_TITLE" "$module_number" "$COLOR_RESET"
+    cat "$module_file"
+    printf "\n\n%sNaciśnij [q], aby wrócić do listy modułów.%s\n" "$COLOR_INFO" "$COLOR_RESET"
+
+    while true; do
+        if key="$(read_input_key)"; then
+            [[ "$key" == "q" || "$key" == "Q" ]] && return
+        fi
+    done
+}
+
+# Otwiera wskazany moduł laboratoryjny z bezpiecznym fallbackiem bez less.
+open_lab_module() {
+    local module_number="$1"
+    local module_file="$2"
+
+    if command -v less >/dev/null 2>&1; then
+        less -R "$module_file"
+    else
+        render_lab_module_page "$module_number" "$module_file"
+    fi
+}
+
+# Wyświetla interaktywny wybór modułów laboratoryjnych i ich osobne strony.
 show_instructions() {
-    local instruction_files=()
+    local module_numbers=("${LAB_MODULES[@]}")
     local selected_index=0
     local key
     local idx
-
-    instruction_files=()
-    while IFS= read -r instruction_file; do
-        instruction_files+=("$instruction_file")
-    done < <(discover_material_files)
-
-    if (( ${#instruction_files[@]} == 0 )); then
-        printf "\nBrak plików instrukcji (*.md, *.txt). Naciśnij [q], aby wrócić..."
-        while true; do
-            if key="$(read_input_key)"; then
-                [[ "$key" == "q" || "$key" == "Q" ]] && return
-            fi
-        done
-        return
-    fi
+    local module_number module_file
 
     while true; do
         clear || true
-        printf "%s=== Instrukcje interaktywne ===%s\n\n" "$COLOR_TITLE" "$COLOR_RESET"
-        printf "Wybierz plik strzałkami góra/dół. Enter = podgląd, q = powrót.\n\n"
+        printf "%s=== Instrukcje laboratoryjne (moduły 1-6) ===%s\n\n" "$COLOR_TITLE" "$COLOR_RESET"
+        printf "Wybierz moduł strzałkami góra/dół. Enter = otwórz, q = powrót.\n\n"
 
-        for idx in "${!instruction_files[@]}"; do
+        for idx in "${!module_numbers[@]}"; do
+            module_number="${module_numbers[$idx]}"
+            module_file="$(get_lab_module_file "$module_number")"
             if (( idx == selected_index )); then
-                printf "  %s> %s%s\n" "$COLOR_LABEL" "${instruction_files[$idx]#$(dirname "$0")/}" "$COLOR_RESET"
+                if [[ -f "$module_file" ]]; then
+                    printf "  %s> Moduł %s%s\n" "$COLOR_LABEL" "$module_number" "$COLOR_RESET"
+                else
+                    printf "  %s> Moduł %s (brak pliku)%s\n" "$COLOR_WARN" "$module_number" "$COLOR_RESET"
+                fi
             else
-                printf "    %s\n" "${instruction_files[$idx]#$(dirname "$0")/}"
+                if [[ -f "$module_file" ]]; then
+                    printf "    Moduł %s\n" "$module_number"
+                else
+                    printf "    %sModuł %s (brak pliku)%s\n" "$COLOR_WARN" "$module_number" "$COLOR_RESET"
+                fi
             fi
         done
 
@@ -385,17 +437,18 @@ show_instructions() {
                 fi
                 ;;
             DOWN)
-                if (( selected_index < ${#instruction_files[@]} - 1 )); then
+                if (( selected_index < ${#module_numbers[@]} - 1 )); then
                     selected_index=$((selected_index + 1))
                 fi
                 ;;
             ENTER)
-                if command -v less >/dev/null 2>&1; then
-                    less -R "${instruction_files[$selected_index]}"
+                module_number="${module_numbers[$selected_index]}"
+                module_file="$(get_lab_module_file "$module_number")"
+                if [[ -f "$module_file" ]]; then
+                    open_lab_module "$module_number" "$module_file"
                 else
-                    clear || true
-                    cat "${instruction_files[$selected_index]}"
-                    printf "\n--- Koniec pliku. Naciśnij [q], aby wrócić..."
+                    printf "\nBrak pliku dla modułu %s (%s). Naciśnij [q], aby wrócić..." \
+                        "$module_number" "${module_file#$(get_script_dir)/}"
                     while true; do
                         if key="$(read_input_key)"; then
                             [[ "$key" == "q" || "$key" == "Q" ]] && break
