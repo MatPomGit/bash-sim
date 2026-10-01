@@ -30,8 +30,10 @@ readonly COLOR_CRIT=$'\033[1;38;5;196m'
 # Zwraca automatycznie zwiększaną wersję opartą o liczbę commitów w repozytorium.
 get_version() {
     local commit_count
-    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        commit_count="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+    local script_dir
+    script_dir="$(get_script_dir)"
+    if git -C "$script_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        commit_count="$(git -C "$script_dir" rev-list --count HEAD 2>/dev/null || echo 0)"
     else
         commit_count=0
     fi
@@ -187,7 +189,7 @@ get_network_stats() {
         return
     fi
 
-    read -r rx_bytes tx_bytes < <(awk -F '[: ]+' -v iface="$default_if" '$1 == iface {print $3, $11}' /proc/net/dev)
+    read -r rx_bytes tx_bytes < <(awk -F '[: ]+' -v iface="$default_if" '$2 == iface {print $3, $11}' /proc/net/dev)
     printf "%s;%s;%s" "$default_if" "$((rx_bytes / 1024 / 1024))" "$((tx_bytes / 1024 / 1024))"
 }
 
@@ -219,7 +221,7 @@ get_established_tcp_connections() {
 
 # Zwraca katalog, w którym znajduje się skrypt.
 get_script_dir() {
-    dirname "$0"
+    cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd
 }
 
 # Buduje ścieżkę do pliku instrukcji laboratoryjnej dla wskazanego modułu.
