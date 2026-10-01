@@ -255,20 +255,18 @@ EOF
     echo "Naciskaj Enter, aby przejsc dalej."
     echo ""
 
+    local trace_file="/tmp/debug_trace_$.txt"
+    bash -x "$tmp_script" >"$trace_file" 2>&1
+
     local line_num=0
     while IFS= read -r line; do
-        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# && ! "$line" =~ ^#!/bin/bash ]]; then
-            continue
-        fi
-        ((line_num++))
-        echo -e "${GREEN}Linia $line_num:${NC} $line"
-        read -p "Nacisnij Enter, aby wykonac..."
-        eval "$line" 2>&1 | sed 's/^/   OUTPUT: /'
-        echo ""
-    done < "$tmp_script"
+        ((line_num+=1))
+        echo -e "${GREEN}Krok $line_num:${NC} $line"
+        read -r -p "Nacisnij Enter, aby przejsc dalej..."
+    done < "$trace_file"
 
-    echo -e "${YELLOW}Koniec symulacji. W rzeczywistym bashdb masz wiecej mozliwosci (breakpointy, watch).${NC}"
-    rm -f "$tmp_script"
+    echo -e "${YELLOW}Koniec demonstracji. Trace pochodzi z rzeczywistego uruchomienia bash -x.${NC}"
+    rm -f "$tmp_script" "$trace_file"
     wait_for_enter
 }
 
@@ -321,11 +319,12 @@ run_test() {
         fi
     done
 
-    local percent=$(echo "scale=1; $score * 100 / $total" | bc 2>/dev/null || echo "0")
+    local percent
+    percent=$(awk -v score="$score" -v total="$total" 'BEGIN { printf "%.1f", score * 100 / total }')
     print_header "WYNIKI"
     echo "Poprawne odpowiedzi: $score/$total"
     printf "Wynik procentowy: %.1f%%\n" "$percent"
-    if (( $(echo "$percent >= 70" | bc -l 2>/dev/null || echo "0") )); then
+    if (( score * 100 >= 70 * total )); then
         echo -e "${GREEN}Gratulacje! Zdajesz test.${NC}"
     else
         echo -e "${YELLOW}Mozesz jeszcze popracowac. Sprobuj ponownie!${NC}"
@@ -445,9 +444,4 @@ main() {
 # ------------------------------------------------------------
 # URUCHOMIENIE
 # ------------------------------------------------------------
-if ! command -v bc &> /dev/null; then
-    echo -e "${RED}Blad: Program 'bc' jest wymagany do obliczen. Zainstaluj go (np. sudo apt install bc).${NC}"
-    exit 1
-fi
-
 main
