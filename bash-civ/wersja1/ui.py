@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
-from terrain import TERRAINS, get_terrain_by_symbol
+from terrain import get_terrain_by_symbol
 
 class UI:
     """Interfejs użytkownika w terminalu."""
@@ -24,17 +24,19 @@ class UI:
         return input("Wybierz opcję: ")
     
     def choose_map_size(self):
-        print("\nWybierz rozmiar mapy:")
-        print("1. Mała (10x10)")
-        print("2. Średnia (20x20)")
-        print("3. Duża (30x30)")
-        choice = input("Opcja: ")
-        if choice == '1':
-            return 10
-        elif choice == '2':
-            return 20
-        else:
-            return 30
+        while True:
+            print("\nWybierz rozmiar mapy:")
+            print("1. Mała (10x10)")
+            print("2. Średnia (20x20)")
+            print("3. Duża (30x30)")
+            choice = input("Opcja: ")
+            if choice == '1':
+                return 10
+            if choice == '2':
+                return 20
+            if choice == '3':
+                return 30
+            print("Nieprawidłowa opcja. Wybierz 1, 2 albo 3.")
     
     def choose_start_position(self, game_map):
         """Gracz wybiera miejsce startowe."""
@@ -44,6 +46,8 @@ class UI:
             try:
                 x = int(input("Podaj wiersz (0-{}): ".format(len(game_map)-1)))
                 y = int(input("Podaj kolumnę (0-{}): ".format(len(game_map[0])-1)))
+                if not (0 <= x < len(game_map) and 0 <= y < len(game_map[0])):
+                    raise IndexError
                 symbol = game_map[x][y]
                 terrain = get_terrain_by_symbol(symbol)
                 if terrain.passable:
@@ -103,6 +107,7 @@ class UI:
         print("1. Załóż nowe miasto (koszt: 50 drewna, 3 populacji)")
         print("2. Badaj technologię")
         print("3. Przeglądaj mapę")
+        print("4. Ustawienia automatyzacji")
         print("0. Zakończ turę (brak akcji)")
     
     def get_action(self):
