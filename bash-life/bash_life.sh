@@ -51,14 +51,19 @@ trap on_exit EXIT INT TERM
 
 # Wyznacza geometrię planszy z aktualnego rozmiaru terminala.
 update_dimensions() {
-  if ((INITIAL_WIDTH > 0 && INITIAL_HEIGHT > 0)); then
+  TERM_ROWS=$(tput lines)
+  TERM_COLS=$(tput cols)
+
+  if ((INITIAL_WIDTH > 0)); then
     GRID_WIDTH=$INITIAL_WIDTH
+  else
+    GRID_WIDTH=$TERM_COLS
+  fi
+
+  if ((INITIAL_HEIGHT > 0)); then
     GRID_HEIGHT=$INITIAL_HEIGHT
   else
-    TERM_ROWS=$(tput lines)
-    TERM_COLS=$(tput cols)
     GRID_HEIGHT=$((TERM_ROWS - 2))
-    GRID_WIDTH=$TERM_COLS
   fi
 
   if ((GRID_HEIGHT < 8 || GRID_WIDTH < 20)); then
@@ -356,7 +361,7 @@ main() {
       GENERATION=$((GENERATION + 1))
       LAST_SIGNATURE=$(life_grid_signature)
 
-      if ((AUTO_STOP == 1 && LAST_SIGNATURE == previous_signature)); then
+      if ((AUTO_STOP == 1)) && [[ "$LAST_SIGNATURE" == "$previous_signature" ]]; then
         PAUSED=1
       fi
     fi
