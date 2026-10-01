@@ -85,6 +85,7 @@ class Automation:
         if not self.enabled['full_auto']:
             return
         self.auto_trade()
+        self.auto_migration()
         self.auto_research()
         # Automatyczne zakładanie miast jest już wywoływane w civ.auto_found_city()
         # Dodatkowo symulujemy naciśnięcie "zakończ turę" – brak dalszych akcji
