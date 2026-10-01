@@ -13,11 +13,13 @@ Interaktywny terminalowy interfejs użytkownika (TUI) napisany w Bashu, pokazuj�
 - Moduły instrukcji laboratoryjnych 1–6 na osobnych stronach, ładowane z plików Markdown `materials/lab_01.md` ... `materials/lab_06.md`.
 - Sekcja materiałów w interfejsie: automatyczne wykrywanie plików instrukcji i dodatkowych plików tekstowych (`*.txt`) z katalogu `materials/` i podgląd przez `less` (z fallbackiem bez `less`).
 
-## Uruchomienie (Linux / macOS / WSL)
+## Uruchomienie (Linux / WSL)
 ```bash
 cd bash-tui
 ./system_tui.sh
 ```
+
+Program korzysta z linuksowych interfejsów `/proc` i `/sys`, dlatego natywny macOS nie jest obecnie obsługiwany.
 
 ## Uruchomienie (Windows)
 ```bat
