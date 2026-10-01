@@ -30,6 +30,8 @@ class Civilization:
     
     def _is_valid_city_position(self, pos):
         x, y = pos
+        if not (0 <= x < self.map_size and 0 <= y < self.map_size):
+            return False
         symbol = self.game_map[x][y]
         terrain = get_terrain_by_symbol(symbol)
         return terrain.passable and not self._is_city_at(pos)
@@ -114,8 +116,6 @@ class Civilization:
             growth = min(2, self.food // 15)
             self.change_population(growth)
             self.change_food(-growth * 10)
-            if self.cities:
-                self.cities[0].population += growth
     
     def auto_found_city(self, ui):
         """Automatyczne zakładanie nowego miasta, gdy populacja jest wysoka i są surowce."""
@@ -186,11 +186,23 @@ class Civilization:
             self.stone = 0
     
     def change_population(self, delta):
-        self.population += delta
-        if self.population < 0:
-            self.population = 0
-        if self.cities and self.population > 0:
-            self.cities[0].population = self.population  # uproszczenie – cała populacja w pierwszym mieście
+        """Zmienia populację, zachowując zgodność sumy mieszkańców miast."""
+        if not self.cities:
+            self.population = max(0, self.population + delta)
+            return
+
+        if delta >= 0:
+            self.cities[0].population += delta
+        else:
+            remaining = -delta
+            for city in sorted(self.cities, key=lambda c: c.population, reverse=True):
+                if remaining == 0:
+                    break
+                removed = min(city.population, remaining)
+                city.population -= removed
+                remaining -= removed
+
+        self._recalculate_population()
     
     def apply_technology_bonuses(self):
         if "Urbanizacja" in self.technologies:
@@ -249,11 +261,14 @@ class Civilization:
         y = ui.get_number("Kolumna: ", 0, len(game_map[0])-1)
         pos = (x, y)
         if self._is_valid_city_position(pos):
+            source_city = max(self.cities, key=lambda c: c.population)
+            if source_city.population < 3:
+                ui.show_message("Brak miasta z co najmniej 3 mieszkańcami do wysłania osadników.")
+                return
+            source_city.population -= 3
             self.add_city(pos)
             self.change_wood(-50)
-            self.change_population(-3)
-            if self.cities:
-                self.cities[0].population -= 3
+            self._recalculate_population()
             ui.show_message(f"Założono nowe miasto na pozycji ({x},{y})!")
         else:
             ui.show_message("Nie można założyć miasta na wodzie, górach lub w miejscu istniejącego miasta.")
