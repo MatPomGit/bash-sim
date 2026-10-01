@@ -25,8 +25,10 @@ class Game:
             elif choice == '2':
                 self.ui.show_message("Funkcja wczytywania gry nie jest jeszcze dostępna.")
                 continue
-            else:
+            elif choice == '3':
                 return
+            else:
+                self.ui.show_message("Nieprawidłowa opcja. Wybierz 1, 2 albo 3.")
 
         while not self.is_game_over():
             self.turn += 1
@@ -87,6 +89,8 @@ class Game:
             self.ui.show_detailed_map(self.map, self.civ)
         elif action == '4':
             self.automation_menu()
+        elif action == '0':
+            return
         else:
             self.ui.show_message("Nieznana akcja.")
 
