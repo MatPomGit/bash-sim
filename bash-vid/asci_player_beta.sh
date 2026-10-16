@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# ascii_player.sh — terminalowy odtwarzacz wideo (ASCII) z menu
+# Wymaga: ffmpeg, ffprobe, fold, awk (opcjonalnie ffplay dla dźwięku)
+#
+# Optymalizacja: ffmpeg sam skaluje klatkę i mapuje jasność na kody znaków
+# ASCII (filtr lut) -> w bashu/awk zostaje tylko zawijanie wierszy i wyświetlanie.
+# Zero przetwarzania pikseli w skrypcie, dekodowanie sprzętowe jeśli dostępne.
+#
+# Użycie: ./ascii_player.sh [folder]
+
+set -uo pipefail
+
+for c in ffmpeg ffprobe fold awk tput; do
+  command -v "$c" >/dev/null || { echo "Brak programu: $c" >&2; exit 1; }
+done
+
+DIR=$(cd "${1:-.}" 2>/dev/null && pwd) || { echo "Nie ma takiego folderu" >&2; exit 1; }
+
+FPS_LIST=(10 15 20 24 30); FPS_I=1
+RAMP_NAMES=(klasyczna drobna minimalna)
+RAMPS=(" .:-=+*#%@" " .,:;i1tfLCG08@" " .oO@")
+TINT_NAMES=(biały zielony bursztyn cyjan)
+TINT_CODES=($'\e[0m' $'\e[38;5;46m' $'\e[38;5;214m' $'\e[38;5;51m')
+RAMP_I=0; TINT_I=0; SOUND=0; LOOP=0; INV=0
+STATUS=""; PGID=""; AUDIO_PID=""
+ITEMS=(); KIND=(); SEL=0; TOP=0
+
+onoff() { (( $1 )) && echo "tak" || echo "nie"; }
+
+# ---------- terminal ----------
+init_term()    { tput smcup; tput civis; }
+restore_term() { printf '\e[?7h\e[0m'; tput cnorm; tput rmcup; }
+
+stop_play() {
+  [[ -n $PGID ]] && kill -TERM -- "-$PGID" 2>/dev/null
+  [[ -n $AUDIO_PID ]] && kill "$AUDIO_PID" 2>/dev/null
+  PGID=""; AUDIO_PID=""
+}
+trap 'stop_play; restore_term' EXIT
+trap 'exit 130' INT TERM
+
+# ---------- skanowanie folderu ----------
+scan() {
+  ITEMS=(); KIND=(); SEL=0; TOP=0
+  local p
+  [[ $DIR != / ]] && { ITEMS+=(".."); KIND+=(d); }
+  for p in "$DIR"/*/; do
+    [[ -d $p ]] || continue
+    p=${p%/}; ITEMS+=("${p##*/}"); KIND+=(d)
+  done
+  shopt -s nocasematch
+  for p in "$DIR"/*; do
+    [[ -f $p ]] || continue
+    case $p in
+      *.mp4|*.mkv|*.avi|*.mov|*.webm|*.m4v|*.flv|*.wmv|*.mpg|*.mpeg)
+        ITEMS+=("${p##*/}"); KIND+=(f) ;;
+    esac
+  done
+  shopt -u nocasematch
+}
+
+# ---------- rysowanie menu (jedno printf, bez migotania) ----------
+draw() {
+  local cols rows vis i out name shown
+  cols=$(tput cols); rows=$(tput lines)
+  vis=$(( rows - 8 )); (( vis < 3 )) && vis=3
+  (( SEL < TOP )) && TOP=$SEL
+  (( SEL >= TOP + vis )) && TOP=$(( SEL - vis + 1 ))
+
+  shown=$DIR
+  (( ${#DIR} > cols - 3 )) && shown="…${DIR: -$(( cols - 4 ))}"
+
+  out=$'\e[H\e[1;36m ASCII VIDEO PLAYER\e[0m\e[K\n'
+  out+=$' \e[2m'"$shown"$'\e[0m\e[K\n\e[K\n'
+
+  for (( i = TOP; i < TOP + vis; i++ )); do
+    if (( i < ${#ITEMS[@]} )); then
+      name=${ITEMS[i]}
+      [[ ${KIND[i]} == d ]] && name+="/"
+      name=${name:0:cols-6}
+      if (( i == SEL )); then out+=$'\e[7m > '"$name"$' \e[0m\e[K\n'
+      else out+="   $name"$'\e[K\n'; fi
+    else
+      out+=$'\e[K\n'
+    fi
+  done
+
+  out+=$'\e[K\n'
+  out+=" fps: ${FPS_LIST[FPS_I]} | ramka: ${RAMP_NAMES[RAMP_I]} | barwa: ${TINT_NAMES[TINT_I]}"
+  out+=" | negatyw: $(onoff $INV) | dźwięk: $(onoff $SOUND) | pętla: $(onoff $LOOP)"$'\e[K\n'
+  out+=$' \e[2m↑↓ wybór  Enter graj/otwórz  ←→ fps  r ramka  t barwa  i negatyw\e[K\n'
+  out+=$' s dźwięk  l pętla  q wyjście  |  w trakcie odtwarzania: q = stop\e[0m\e[K\n'
+  [[ -n $STATUS ]] && out+=$' \e[1;31m'"$STATUS"$'\e[0m\e[K'
+  printf '%s\e[J' "$out"
+}
+
+# ---------- odczyt klawisza ----------
+readkey() {
+  local r
+  IFS= read -rsn1 K || return 1
+  if [[ $K == $'\e' ]]; then
+    IFS= read -rsn2 -t 0.05 r || true; K+=$r
+    case $r in "[5"|"[6"|"[1"|"[4") IFS= read -rsn1 -t 0.05 r || true; K+=$r ;; esac
+  fi
+  return 0
+}
+
+# ---------- odtwarzanie ----------
+play() {
+  local file=$1 cols rows vw vh W H maxH fps r rev i n c t expr tint dummy
+  cols=$(tput cols); rows=$(tput lines)
+
+  IFS=, read -r vw vh dummy < <(ffprobe -v error -select_streams v:0 \
+    -show_entries stream=width,height -of csv=p=0 "$file" 2>/dev/null)
+  vh=${vh%%,*}
+  if ! [[ ${vw:-} =~ ^[0-9]+$ && ${vh:-} =~ ^[0-9]+$ ]] || (( vw < 1 || vh < 1 )); then
+    STATUS="Nie można odczytać pliku wideo."; return
+  fi
+
+  # wymiary: dopasowanie do okna, znak ≈ 2x wyższy niż szerszy
+  maxH=$(( rows - 1 )); W=$cols
+  H=$(( W * vh / vw / 2 ))
+  if (( H > maxH )); then H=$maxH; W=$(( H * 2 * vw / vh )); fi
+  (( H < 1 )) && H=1; (( W < 1 )) && W=1; (( W > cols )) && W=$cols
+
+  # ramka znaków (opcjonalnie odwrócona)
+  r=${RAMPS[RAMP_I]}
+  if (( INV )); then
+    rev=""; for (( i = ${#r} - 1; i >= 0; i-- )); do rev+=${r:i:1}; done; r=$rev
+  fi
+  # wyrażenie lut: jasność 0..255 -> kod ASCII znaku
+  n=${#r}; expr=""
+  for (( i = 0; i < n; i++ )); do
+    printf -v c '%d' "'${r:i:1}"
+    if (( i < n - 1 )); then t=$(( (i + 1) * 256 / n )); expr+="if(lt(val,$t),$c,"
+    else expr+="$c"; fi
+  done
+  for (( i = 0; i < n - 1; i++ )); do expr+=")"; done
+
+  fps=${FPS_LIST[FPS_I]}; tint=${TINT_CODES[TINT_I]}
+  local vf="fps=$fps,scale=$W:$H:flags=area:out_range=full,format=gray,lut=y='$expr'"
+
+  printf '\e[?7l\e[0m\e[2J\e[H'
+  local quit=0 k pipe_pid
+  while :; do
+    set -m
+    LC_ALL=C ffmpeg -nostdin -loglevel quiet -hwaccel auto -re -i "$file" \
+        -an -sn -dn -vf "$vf" -f rawvideo -pix_fmt gray - < /dev/null 2>/dev/null \
+      | LC_ALL=C fold -w "$W" \
+      | LC_ALL=C awk -v H="$H" -v pre="$tint" '
+          { if (++n < H) buf = buf $0 "\n"
+            else { printf "\033[H%s%s%s", pre, buf, $0; fflush(); buf = ""; n = 0 } }' &
+    pipe_pid=$!
+    set +m
+    PGID=$(ps -o pgid= -p "$pipe_pid" 2>/dev/null | tr -d ' ')
+    disown "$pipe_pid" 2>/dev/null
+
+    if (( SOUND )) && command -v ffplay >/dev/null; then
+      ffplay -nodisp -autoexit -loglevel quiet -vn "$file" </dev/null >/dev/null 2>&1 &
+      AUDIO_PID=$!; disown "$AUDIO_PID" 2>/dev/null
+    fi
+
+    # czekanie na koniec lub 'q' (5 wybudzeń/s — znikome CPU)
+    while kill -0 "$pipe_pid" 2>/dev/null; do
+      if IFS= read -rsn1 -t 0.2 k && [[ $k == [qQ] ]]; then quit=1; break; fi
+    done
+    stop_play
+    (( LOOP && ! quit )) || break
+    printf '\e[2J'
+  done
+
+  while IFS= read -rsn1 -t 0.02 dummy; do :; done   # opróżnij bufor klawiszy
+  printf '\e[?7h\e[0m\e[2J'
+}
+
+# ---------- pętla główna ----------
+main() {
+  scan; init_term
+  local name
+  while :; do
+    draw; STATUS=""
+    readkey || break
+    case $K in
+      $'\e[A'|$'\eOA'|k) (( SEL > 0 )) && (( SEL-- )) ;;
+      $'\e[B'|$'\eOB'|j) (( SEL < ${#ITEMS[@]} - 1 )) && (( SEL++ )) ;;
+      $'\e[5~') (( SEL = SEL > 10 ? SEL - 10 : 0 )) ;;
+      $'\e[6~') (( SEL = SEL + 10 < ${#ITEMS[@]} ? SEL + 10 : ${#ITEMS[@]} - 1 )) ;;
+      $'\e[H'|$'\e[1~') SEL=0 ;;
+      $'\e[F'|$'\e[4~') SEL=$(( ${#ITEMS[@]} - 1 )) ;;
+      $'\e[C'|$'\eOC') (( FPS_I < ${#FPS_LIST[@]} - 1 )) && (( FPS_I++ )) ;;
+      $'\e[D'|$'\eOD') (( FPS_I > 0 )) && (( FPS_I-- )) ;;
+      r) RAMP_I=$(( (RAMP_I + 1) % ${#RAMPS[@]} )) ;;
+      t) TINT_I=$(( (TINT_I + 1) % ${#TINT_CODES[@]} )) ;;
+      i) INV=$(( 1 - INV )) ;;
+      s) SOUND=$(( 1 - SOUND )) ;;
+      l) LOOP=$(( 1 - LOOP )) ;;
+      q|Q) break ;;
+      '')  # Enter
+        (( ${#ITEMS[@]} )) || continue
+        name=${ITEMS[SEL]}
+        if [[ ${KIND[SEL]} == d ]]; then
+          if [[ $name == ".." ]]; then DIR=${DIR%/*}; [[ -z $DIR ]] && DIR=/
+          else DIR=${DIR%/}/$name; fi
+          scan
+        else
+          play "${DIR%/}/$name"
+        fi ;;
+    esac
+  done
+}
+
+main
