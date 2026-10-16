@@ -5,7 +5,7 @@ chmod +x ascii_player.sh
 ./ascii_player.sh ~/Filmy    # wskazany folder
 
 
-
+-----
 
 ./ascii_player.sh              # pyta o zgodę przed instalacją
 
