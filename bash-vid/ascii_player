@@ -6,13 +6,121 @@
 # ASCII (filtr lut) -> w bashu/awk zostaje tylko zawijanie wierszy i wyświetlanie.
 # Zero przetwarzania pikseli w skrypcie, dekodowanie sprzętowe jeśli dostępne.
 #
-# Użycie: ./ascii_player.sh [folder]
+# Użycie: ./ascii_player.sh [-y] [--no-install] [folder]
+#   Brakujące zależności są wykrywane i instalowane automatycznie
+#   (apt, dnf, yum, pacman, zypper, apk, Homebrew, Termux pkg).
 
 set -uo pipefail
 
-for c in ffmpeg ffprobe fold awk tput; do
-  command -v "$c" >/dev/null || { echo "Brak programu: $c" >&2; exit 1; }
+# ---------- zależności (automatyczna instalacja) ----------
+# Opcje: -y/--yes (instaluj bez pytania), --no-install (tylko sprawdź)
+ORIG_ARGS=("$@"); ASSUME_YES=0; NO_INSTALL=0; ARGS=()
+for a in "$@"; do
+  case $a in
+    -y|--yes) ASSUME_YES=1 ;;
+    --no-install) NO_INSTALL=1 ;;
+    *) ARGS+=("$a") ;;
+  esac
 done
+set -- ${ARGS[@]+"${ARGS[@]}"}
+
+PM=""; SUDO=""
+
+detect_pm() {
+  local p
+  for p in apt-get dnf yum pacman zypper apk brew pkg; do
+    command -v "$p" >/dev/null && { PM=$p; return 0; }
+  done
+  return 1
+}
+
+# nazwa ogólna -> nazwa pakietu w danym menedżerze
+pm_pkg() {
+  case $1 in
+    ncurses)
+      case $PM in
+        apt-get) echo ncurses-bin ;;
+        zypper|pkg) echo ncurses-utils ;;
+        *) echo ncurses ;;
+      esac ;;
+    *) echo "$1" ;;
+  esac
+}
+
+pm_install() {
+  case $PM in
+    apt-get) $SUDO apt-get update -qq && $SUDO apt-get install -y "$@" ;;
+    dnf)     $SUDO dnf install -y "$@" ;;
+    yum)     $SUDO yum install -y "$@" ;;
+    pacman)  $SUDO pacman -S --needed --noconfirm "$@" ;;
+    zypper)  $SUDO zypper --non-interactive install "$@" ;;
+    apk)     $SUDO apk add "$@" ;;
+    brew)    brew install "$@" ;;
+    pkg)     pkg install -y "$@" ;;
+  esac
+}
+
+ensure_deps() {
+  local miss=() c g p pkgs="" ans
+
+  # bash >= 4 (ułamkowy timeout w 'read'); na macOS domyślny to 3.2
+  if (( BASH_VERSINFO[0] < 4 )); then
+    if command -v brew >/dev/null; then
+      echo "Wymagany bash >= 4. Instaluję przez Homebrew..."
+      brew install bash && exec "$(brew --prefix)/bin/bash" "$0" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+    fi
+    echo "Wymagany bash >= 4 (masz $BASH_VERSION). Zainstaluj nowszy bash" >&2; exit 1
+  fi
+
+  for c in ffmpeg ffprobe fold awk tput; do
+    command -v "$c" >/dev/null || miss+=("$c")
+  done
+  (( ${#miss[@]} == 0 )) && return 0
+
+  echo "Brakujące zależności: ${miss[*]}"
+  if (( NO_INSTALL )); then
+    echo "Zainstaluj ręcznie: ffmpeg, coreutils, gawk, ncurses" >&2; exit 1
+  fi
+  detect_pm || { echo "Nie rozpoznano menedżera pakietów. Zainstaluj ręcznie: ffmpeg, coreutils, gawk, ncurses" >&2; exit 1; }
+
+  for c in "${miss[@]}"; do
+    case $c in
+      ffmpeg|ffprobe|ffplay) g=ffmpeg ;;
+      fold) g=coreutils ;;
+      awk)  g=gawk ;;
+      tput) g=ncurses ;;
+    esac
+    p=$(pm_pkg "$g")
+    [[ " $pkgs " == *" $p "* ]] || pkgs+="${pkgs:+ }$p"
+  done
+
+  if [[ $PM != brew && $PM != pkg ]] && (( EUID != 0 )); then
+    command -v sudo >/dev/null || { echo "Potrzebne uprawnienia root (brak sudo). Zainstaluj: $pkgs" >&2; exit 1; }
+    SUDO=sudo
+  fi
+
+  if (( ! ASSUME_YES )); then
+    [[ -t 0 ]] || { echo "Brak terminala do potwierdzenia. Uruchom z opcją -y lub zainstaluj: $pkgs" >&2; exit 1; }
+    read -rp "Zainstalować ($PM): $pkgs ? [T/n] " ans
+    [[ -z $ans || $ans == [TtYy]* ]] || { echo "Anulowano."; exit 1; }
+  fi
+
+  # shellcheck disable=SC2086
+  pm_install $pkgs
+  # Fedora/RHEL bez RPM Fusion: wariant ffmpeg-free
+  if ! command -v ffmpeg >/dev/null && [[ $PM == dnf || $PM == yum ]]; then
+    $SUDO "$PM" install -y ffmpeg-free
+  fi
+
+  hash -r
+  for c in ffmpeg ffprobe fold awk tput; do
+    command -v "$c" >/dev/null || { echo "Nie udało się zainstalować: $c. Zainstaluj ręcznie" >&2; exit 1; }
+  done
+  echo "Zależności zainstalowane"
+}
+
+ensure_deps
+HAVE_FFPLAY=0; command -v ffplay >/dev/null && HAVE_FFPLAY=1
 
 DIR=$(cd "${1:-.}" 2>/dev/null && pwd) || { echo "Nie ma takiego folderu" >&2; exit 1; }
 
@@ -44,19 +152,19 @@ scan() {
   ITEMS=(); KIND=(); SEL=0; TOP=0
   local p
   [[ $DIR != / ]] && { ITEMS+=(".."); KIND+=(d); }
-  for p in "$DIR"/*/; do
-    [[ -d $p ]] || continue
-    p=${p%/}; ITEMS+=("${p##*/}"); KIND+=(d)
-  done
-  shopt -s nocasematch
+  local -a dirs=() files=()
+  shopt -s nocasematch nullglob
   for p in "$DIR"/*; do
-    [[ -f $p ]] || continue
-    case $p in
-      *.mp4|*.mkv|*.avi|*.mov|*.webm|*.m4v|*.flv|*.wmv|*.mpg|*.mpeg)
-        ITEMS+=("${p##*/}"); KIND+=(f) ;;
-    esac
+    if [[ -d $p ]]; then dirs+=("${p##*/}")
+    else
+      case $p in
+        *.mp4|*.mkv|*.avi|*.mov|*.webm|*.m4v|*.flv|*.wmv|*.mpg|*.mpeg) files+=("${p##*/}") ;;
+      esac
+    fi
   done
-  shopt -u nocasematch
+  shopt -u nocasematch nullglob
+  for p in "${dirs[@]}";  do ITEMS+=("$p"); KIND+=(d); done
+  for p in "${files[@]}"; do ITEMS+=("$p"); KIND+=(f); done
 }
 
 # ---------- rysowanie menu (jedno printf, bez migotania) ----------
@@ -144,8 +252,8 @@ play() {
   local quit=0 k pipe_pid
   while :; do
     set -m
-    LC_ALL=C ffmpeg -nostdin -loglevel quiet -hwaccel auto -re -i "$file" \
-        -an -sn -dn -vf "$vf" -f rawvideo -pix_fmt gray - < /dev/null 2>/dev/null \
+    LC_ALL=C ffmpeg -nostdin -loglevel quiet -hwaccel auto -skip_loop_filter all -re -i "$file" \
+        -map 0:v:0 -an -sn -dn -vf "$vf" -f rawvideo -pix_fmt gray - < /dev/null 2>/dev/null \
       | LC_ALL=C fold -w "$W" \
       | LC_ALL=C awk -v H="$H" -v pre="$tint" '
           { if (++n < H) buf = buf $0 "\n"
@@ -192,7 +300,8 @@ main() {
       r) RAMP_I=$(( (RAMP_I + 1) % ${#RAMPS[@]} )) ;;
       t) TINT_I=$(( (TINT_I + 1) % ${#TINT_CODES[@]} )) ;;
       i) INV=$(( 1 - INV )) ;;
-      s) SOUND=$(( 1 - SOUND )) ;;
+      s) if (( HAVE_FFPLAY )); then SOUND=$(( 1 - SOUND ))
+         else STATUS="Brak ffplay — dźwięk niedostępny (zainstaluj pełny pakiet ffmpeg)"; fi ;;
       l) LOOP=$(( 1 - LOOP )) ;;
       q|Q) break ;;
       '')  # Enter
