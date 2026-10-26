@@ -6,6 +6,7 @@ Zbiór małych projektów dydaktycznych i eksperymentalnych związanych z termin
 | --- | --- | --- |
 | `bash-life` | Bash + HTML | Gra w życie Conwaya w terminalu i przeglądarce |
 | `bash-rpg` | Bash | Gra RPG ucząca poleceń Bash |
+| [`bash-pokemon`](bash-pokemon/README.md) | Bash | Pokémon: Bash Red, eksploracja Kanto i walki turowe |
 | `bash-tui` | Bash | Interaktywny monitor informacji systemowych |
 | `bash-civ` | Python + HTML | Eksperymentalna symulacja rozwoju cywilizacji |
 | `ndplab` | Bash | Materiały i interaktywne ćwiczenia NDP |
