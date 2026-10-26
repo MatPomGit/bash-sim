@@ -18,6 +18,7 @@ def main() -> int:
         subprocess.run(["bash", "-n", str(game)], check=True, cwd=work)
         env = dict(os.environ, BASH_POKEMON_TEST_ENTRY=str(game), XDG_DATA_HOME=str(work / "saves"))
         subprocess.run(["bash", str(ROOT / "tests/run_tests.sh")], check=True, cwd=work, env=env)
+        subprocess.run(["python3", str(ROOT / "tests/test_ui.py")], check=True, cwd=work, env=env)
         # Run actual interactive input through the isolated file, then resume it.
         save = work / "saved game.dat"
         commands = "1\ne\n1\nt\n" + "1\n" * 12 + "q\n"

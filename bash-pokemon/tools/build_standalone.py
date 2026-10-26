@@ -26,7 +26,7 @@ def build() -> str:
         raise ValueError("Cannot identify the modular entry point")
     source = source.replace(root_line, "")
     source = embed_data(source, "species.tsv")
-    for name in ("world", "story", "collection", "save"):
+    for name in ("world", "story", "collection", "ui", "save"):
         target = f'source "$GAME_ROOT/lib/{name}.sh"'
         if source.count(target) != 1:
             raise ValueError(f"Expected exactly one module include for {name}")

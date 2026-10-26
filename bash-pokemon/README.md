@@ -1,6 +1,6 @@
 # Pokémon: Bash Red
 
-Wersja 1.2.0
+Wersja 1.3.0
 
 Terminalowa adaptacja Pokémon Red w Bashu: podróż od laboratorium Oaka do Sali
 Sławy, osiem spotkań z Blue, Team Rocket, osiem sal i epilog w Cerulean Cave.
@@ -50,6 +50,33 @@ python3 bash-pokemon/tools/build_standalone.py --check
 
 Generator używa wyłącznie biblioteki standardowej Python 3.10+. Wygenerowana
 gra działa bez Pythona. `--check` wykrywa nieaktualny plik dystrybucyjny.
+
+## Oprawa terminalowa
+
+Interfejs retro ma kolorowe mapy, odrębne oznaczenia budynków i postaci,
+ramki dialogów, widoczne odznaki oraz paski HP. Zielony, żółty i czerwony
+pasek pokazuje poziom zdrowia. Ekran walki zawiera małe pixelowe sylwetki:
+osobne projekty starterów, Pikachu i Mewtwo, a dla pozostałych gatunków
+sylwetki według typu. Nazwa, poziom i HP zawsze odpowiadają faktycznemu gatunkowi.
+
+Standardowy ekran mapy i walki mieści się w 80×24. W węższych terminalach
+mapa używa jednej kolumny na pole, tekst się zawija, a ekran walki pomija
+sylwetki. Zalecane minimum szerokości: 24 kolumny; większe okno poprawia czytelność.
+Rozmiar jest odczytywany przy uruchomieniu. Nie wymaga fontów ikonowych
+ani pakietów do obsługi terminala.
+
+```bash
+bash pokemon-red.sh                  # automatyczne kolory w terminalu
+bash pokemon-red.sh --ascii          # zwykłe znaki zamiast ramek Unicode
+bash pokemon-red.sh --no-color       # bez kolorów
+bash pokemon-red.sh --plain          # prosty tekst bez sekwencji sterujących
+bash pokemon-red.sh --color=always   # wymuś kolory, także w przekierowanym wyjściu
+```
+
+Zmienna `NO_COLOR` wyłącza kolory. Przy przekierowaniu wyjścia do pliku oraz
+w terminalu `dumb` domyślnie używany jest zwykły tekst. Można też ustawić
+`BASH_POKEMON_COLOR=auto|always|never`, `BASH_POKEMON_ASCII=1` lub
+`BASH_POKEMON_STYLE=plain`. Ustawienia wyglądu nie zmieniają formatu zapisów.
 
 ## Sterowanie
 
@@ -195,6 +222,7 @@ oraz pozostałe aktywności i wymiany. Nie ma planu wdrażania backendu.
 - `lib/story.sh`: wydarzenia, rywal, sale i Liga
 - `lib/collection.sh`: drużyna, PC, ewolucje i przedmioty
 - `lib/save.sh`: walidacja, zapis i migracja
+- `lib/ui.sh`: kolory, mapy, ramki, paski HP i sylwetki
 - `data/species.tsv`: numery Pokédexu, typy i ewolucje 151 gatunków
 - `data/legacy_ids.tsv`: mapowanie gatunków z zapisu 1.0
 - `pokemon-red.sh`: gotowa dystrybucja w jednym pliku
@@ -205,6 +233,7 @@ oraz pozostałe aktywności i wymiany. Nie ma planu wdrażania backendu.
 bash -n bash-pokemon/bash_pokemon.sh
 bash bash-pokemon/tests/run_tests.sh
 python3 bash-pokemon/tests/test_standalone.py
+python3 bash-pokemon/tests/test_ui.py
 ```
 
 Dane gatunków i warunki fabularne sprawdzono w referencyjnej rekonstrukcji

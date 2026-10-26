@@ -78,7 +78,7 @@ run_story_event() {
     fi
     if [[ $key == flash ]] && (( ${#owned[@]} < 10 )); then message='Pomocnik wymaga 10 złapanych gatunków'; return 0; fi
     if [[ $key == lab ]]; then heal_party; fi
-    printf '\n%s\n%s\n' "${event_title[$key]}" "${event_text[$key]}"
+    ui_dialog "${event_title[$key]}" "${event_text[$key]}"
     if [[ $key == mansion ]]; then
         printf '%s\n' 'Dziennik 1: Ekspedycja odkrywa nieznanego Pokémona w Ameryce Południowej.' \
             'Dziennik 2: Odkryty gatunek otrzymuje nazwę Mew.' \

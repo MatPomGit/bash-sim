@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Pokémon: Bash Red 1.2.0. Bash 4.4+, no external game runtime.
+# Pokémon: Bash Red 1.3.0. Bash 4.4+, no external game runtime.
 if (( BASH_VERSINFO[0] < 4 || BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4 )); then
     printf 'Wymagany Bash 4.4 lub nowszy\n' >&2
     exit 1
 fi
 
-VERSION=1.2.0
+VERSION=1.3.0
 GAME_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 declare -a names types types2 evolutions evolve_at map
 while IFS=$'\t' read -r id name type second evolution condition; do
@@ -15,6 +15,7 @@ unset id name type second evolution condition
 source "$GAME_ROOT/lib/world.sh"
 source "$GAME_ROOT/lib/story.sh"
 source "$GAME_ROOT/lib/collection.sh"
+source "$GAME_ROOT/lib/ui.sh"
 declare -a party_id party_lv party_xp party_hp
 area=0 x=10 y=4 gold=500 balls=10 potions=5 badges=0 champion=0
 active=0 starter=1 checkpoint=0 masterballs=0 fossil_id=0
@@ -86,13 +87,7 @@ ask() {
     printf '%s' "$1"
     IFS= read -r REPLY || return 2
 }
-show_party() {
-    local i
-    for ((i=0; i<${#party_id[@]}; i++)); do
-        max_hp "${party_lv[i]}"
-        printf '%s. %-12s poz. %-3s HP %s/%s XP %s/%s\n' "$((i+1))" "${names[${party_id[i]}]}" "${party_lv[i]}" "${party_hp[i]}" "$REPLY" "${party_xp[i]}" "$((party_lv[i]*12))"
-    done
-}
+show_party() { ui_party; }
 choose_active() {
     local choice
     show_party
@@ -120,16 +115,18 @@ catch_chance() {
 }
 battle() {
     local foe=$1 level=$2 mode=$3 enemy_hp enemy_max choice attack_type power hit chance result
+    local combat_log="Pojawia się ${names[$1]}!" entered_species
     battle_result=ongoing
     max_hp "$level"; enemy_hp=$REPLY enemy_max=$REPLY
     if (( active < 0 || active >= ${#party_id[@]} )); then active=0; fi
     if (( party_hp[active] == 0 )); then
         first_alive || { blackout; return 1; }
     fi
+    entered_species=${party_id[active]}
     printf '\n%s, poziom %s!\n' "${names[foe]}" "$level"
     while (( enemy_hp > 0 )); do
-        printf '\n%s HP %s/%s | %s HP %s\n' "${names[foe]}" "$enemy_hp" "$enemy_max" "${names[${party_id[active]}]}" "${party_hp[active]}"
-        ask '[1] Atak [2] Atak typu [3] Kula [4] Mikstura [5] Zmiana [6] Ucieczka [7] Drugi typ [8] Master Ball: ' || return 2
+        ui_battle "$foe" "$level" "$enemy_hp" "$enemy_max" "$mode" "$combat_log"
+        ask 'Ruch [1-8]: ' || return 2
         choice=$REPLY
         case $choice in
             1|2|7)
@@ -137,55 +134,63 @@ battle() {
                 if [[ $choice == 2 ]]; then attack_type=${types[${party_id[active]}]}; power=10; fi
                 if [[ $choice == 7 ]]; then
                     attack_type=${types2[${party_id[active]}]}; power=10
-                    if [[ $attack_type == - ]]; then printf 'Ten Pokémon ma jeden typ\n'; continue; fi
+                    if [[ $attack_type == - ]]; then combat_log='Ten Pokémon ma jeden typ'; continue; fi
                 fi
                 damage "${party_lv[active]}" "$attack_type" "${types[foe]}" "$power" "${types2[foe]}"; hit=$REPLY
                 enemy_hp=$((enemy_hp-hit)); (( enemy_hp < 0 )) && enemy_hp=0
-                printf 'Atak (%s): %s obrażeń\n' "$attack_type" "$hit"
+                combat_log="Twój atak ($attack_type): $hit obrażeń"
+                printf '%s\n' "$combat_log"
                 ;;
             3|8)
-                if [[ $mode != wild ]]; then printf 'Nie można łapać Pokémonów trenera\n'; continue; fi
-                if (( ${#party_id[@]} == 6 && ${#box_id[@]} >= 300 )); then printf 'Drużyna i PC są pełne\n'; continue; fi
+                if [[ $mode != wild ]]; then combat_log='Nie można łapać Pokémonów trenera'; continue; fi
+                if (( ${#party_id[@]} == 6 && ${#box_id[@]} >= 300 )); then combat_log='Drużyna i PC są pełne'; continue; fi
                 if [[ $choice == 8 ]]; then
-                    if (( masterballs == 0 )); then printf 'Brak Master Ball\n'; continue; fi
+                    if (( masterballs == 0 )); then combat_log='Brak Master Ball'; continue; fi
                     masterballs=0
                     add_pokemon "$foe" "$level" "$enemy_hp"; battle_result=caught; message="Złapano ${names[foe]}!"; return 0
                 fi
-                if (( balls == 0 )); then printf 'Brak kul\n'; continue; fi
+                if (( balls == 0 )); then combat_log='Brak kul'; continue; fi
                 balls=$((balls-1)); catch_chance "$enemy_hp" "$enemy_max"; chance=$REPLY
                 if (( RANDOM % 100 < chance )); then
                     add_pokemon "$foe" "$level" "$enemy_hp"; battle_result=caught
                     message="Złapano ${names[foe]}!"; printf '%s\n' "$message"; return 0
                 fi
-                printf 'Pokémon wydostał się z kuli!\n'
+                combat_log='Pokémon wydostał się z kuli!'
+                printf '%s\n' "$combat_log"
                 ;;
-            4) use_potion || continue ;;
+            4)
+                if use_potion; then combat_log='Użyto mikstury'; else combat_log='Brak mikstur lub pełne HP'; continue; fi ;;
             5)
                 choose_active; result=$?
                 (( result == 2 )) && return 2
-                (( result != 0 )) && continue
+                if (( result != 0 )); then combat_log='Wybierz innego przytomnego Pokémona'; continue; fi
+                combat_log="Zmiana: ${names[${party_id[active]}]}"
                 ;;
             6)
-                if [[ $mode != wild ]]; then printf 'Nie można uciec z walki trenerskiej\n'; continue; fi
+                if [[ $mode != wild ]]; then combat_log='Nie można uciec z walki trenerskiej'; continue; fi
                 if (( RANDOM % 100 < 75 )); then message='Ucieczka udana'; battle_result=fled; return 0; fi
-                printf 'Nie udało się uciec\n'
+                combat_log='Nie udało się uciec'
+                printf '%s\n' "$combat_log"
                 ;;
-            *) printf 'Wybierz 1–8\n'; continue ;;
+            *) combat_log='Wybierz 1–8'; continue ;;
         esac
         if (( enemy_hp == 0 )); then
             battle_result=won
             gain_xp "$active" "$((level*10))"
             gold=$((gold+level*15)); (( gold > 999999 )) && gold=999999
             message="Pokonano ${names[foe]}! +$((level*10)) XP, +$((level*15)) monet"
+            if [[ ${party_id[active]} != "$entered_species" ]]; then message+=" | Teraz walczy ${names[${party_id[active]}]}"; fi
             printf '%s\n' "$message"; return 0
         fi
         damage "$level" "${types[foe]}" "${types[${party_id[active]}]}" 8 "${types2[${party_id[active]}]}"; hit=$REPLY
         party_hp[active]=$((party_hp[active]-hit))
         (( party_hp[active] < 0 )) && party_hp[active]=0
+        combat_log+=" | ${names[foe]}: $hit obrażeń"
         printf '%s zadaje %s obrażeń\n' "${names[foe]}" "$hit"
         if (( party_hp[active] == 0 )); then
             printf '%s omdlewa!\n' "${names[${party_id[active]}]}"
             first_alive || { blackout; return 1; }
+            combat_log="Pokémon omdlewa. Wchodzi ${names[${party_id[active]}]}"
         fi
     done
 }
@@ -267,19 +272,7 @@ release_pokemon() {
 }
 
 source "$GAME_ROOT/lib/save.sh"
-render() {
-    local row text
-    if [[ -t 1 && ${TERM:-dumb} != dumb && -z ${NO_COLOR:-} ]]; then printf '\033[2J\033[H'; fi
-    printf '\nPOKÉMON: BASH RED %s | %s | Odznaki %s/8\n' "$VERSION" "${towns[area]}" "$badges"
-    for ((row=0; row<${#map[@]}; row++)); do
-        text=${map[row]}
-        (( row == y )) && text="${text:0:x}@${text:x+1}"
-        printf '%s\n' "$text"
-    done
-    printf '@ Ty | : trawa | N historia | C Centrum | P PC | S sklep | G sala | T trener | < > drogi\n'
-    printf 'Monety %s | Kule %s | Mikstury %s\n%s\n' "$gold" "$balls" "$potions" "$message"
-    printf 'WASD + Enter: ruch | e: akcja | p: drużyna | r: wypuść | j: dziennik | m: Kanto | k: Pokédex | i: plecak | f: Fly | h: pomoc | q: zapisz i wyjdź\n'
-}
+render() { ui_world; }
 help_game() {
     printf '%s\n' 'WASD + Enter: ruch. < i >: wybór sąsiedniej lokacji.' \
         'Stań na N i naciśnij e, aby porozmawiać i rozpocząć wydarzenie.' \
@@ -298,12 +291,17 @@ main() {
             --new) mode=new ;;
             --load) mode=load ;;
             --save) shift; if (( $# == 0 )) || [[ -z $1 ]]; then printf 'Podaj ścieżkę zapisu\n' >&2; return 1; fi; save_file=$1 ;;
-            --help|-h) printf 'Użycie: bash bash_pokemon.sh [--new|--load] [--save PLIK]\n'; help_game; return 0 ;;
+            --help|-h) printf 'Użycie: bash bash_pokemon.sh [--new|--load] [--save PLIK] [--plain|--ascii|--no-color|--color=auto|always|never]\n'; help_game; return 0 ;;
+            --plain) ui_style=plain ;;
+            --ascii) ui_ascii=1 ;;
+            --no-color) ui_color_mode=never ;;
+            --color=auto|--color=always|--color=never) ui_color_mode=${1#--color=} ;;
             --version) printf '%s\n' "$VERSION"; return 0 ;;
             *) printf 'Nieznana opcja: %s\n' "$1" >&2; return 1 ;;
         esac
         shift
     done
+    ui_init
     if [[ $mode != new && -e $save_file ]]; then
         if ! load_game; then printf 'Nieprawidłowy zapis: %s. Zachowano plik. Użyj --new, aby zacząć od nowa\n' "$save_file" >&2; return 1; fi
     elif [[ $mode == load ]]; then
@@ -313,7 +311,7 @@ main() {
             ask 'Zastąpić istniejący zapis nową grą? [t/n]: ' || return 0
             [[ $REPLY == t ]] || return 0
         fi
-        printf 'POKÉMON: BASH RED\n[1] Bulbasaur (trawa) [2] Charmander (ogień) [3] Squirtle (woda)\n'
+        ui_starters
         while :; do
             ask 'Wybierz startera: ' || return 0
             case $REPLY in 1) selected=1; break ;; 2) selected=4; break ;; 3) selected=7; break ;; *) printf 'Wybierz 1, 2 lub 3\n' ;; esac

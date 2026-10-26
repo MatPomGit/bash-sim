@@ -438,7 +438,7 @@ cli_test() {
     expect_status 1 bash "$ENTRY" --unknown >/dev/null 2>&1
     expect_status 1 bash "$ENTRY" --new --save "$TMP" <<< $'t\n1' >/dev/null 2>&1
     bash "$ENTRY" --help >/dev/null
-    eq "$(bash "$ENTRY" --version)" 1.2.0
+    eq "$(bash "$ENTRY" --version)" 1.3.0
 }
 check '151 species, Gen I types, evolution graph and 76 legacy IDs' species_test
 check 'three starters and clean new-game state' starters_test
