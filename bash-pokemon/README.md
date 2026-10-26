@@ -1,6 +1,6 @@
 # Pokémon: Bash Red
 
-Wersja 1.1.0
+Wersja 1.2.0
 
 Terminalowa adaptacja Pokémon Red w Bashu: podróż od laboratorium Oaka do Sali
 Sławy, osiem spotkań z Blue, Team Rocket, osiem sal i epilog w Cerulean Cave.
@@ -22,6 +22,34 @@ Wybierz startera. Zaczynasz na polu wydarzenia w laboratorium. Naciśnij `e`,
 wybierz pierwsze wydarzenie, a następnie potwierdź `t`. Do sąsiednich lokacji
 przechodzisz przez `<` albo `>` i wybierasz drogę z listy. Następne uruchomienie
 wczyta zapis automatycznie.
+
+## Jeden plik do pobrania
+
+Plik [`pokemon-red.sh`](pokemon-red.sh) zawiera cały kod, fabułę i dane gry.
+Wystarczy skopiować go do dowolnego katalogu i uruchomić:
+
+```bash
+bash pokemon-red.sh
+```
+
+Nie potrzebuje pozostałych plików repozytorium, Pythona ani rozpakowywania
+archiwum. Moduły i dane są osadzone w skrypcie i wczytywane do zmiennych Bash.
+Na dysku gra tworzy zapis postępu, korzystając ze standardowych narzędzi
+systemowych. Wymaga Bash 4.4+, na Windows dostępnego w Git Bash lub WSL.
+Obsługuje te same opcje i zapisy co wersja modułowa.
+
+ZIP nadaje się do przesyłania plików, ale jego otwarcie nie uruchamia gry
+przenośnie na różnych systemach. Dystrybucją gry jest pojedynczy plik `.sh`.
+
+Dla programisty źródłem pozostają moduły. Po ich zmianie odtwórz plik:
+
+```bash
+python3 bash-pokemon/tools/build_standalone.py
+python3 bash-pokemon/tools/build_standalone.py --check
+```
+
+Generator używa wyłącznie biblioteki standardowej Python 3.10+. Wygenerowana
+gra działa bez Pythona. `--check` wykrywa nieaktualny plik dystrybucyjny.
 
 ## Sterowanie
 
@@ -169,11 +197,14 @@ oraz pozostałe aktywności i wymiany. Nie ma planu wdrażania backendu.
 - `lib/save.sh`: walidacja, zapis i migracja
 - `data/species.tsv`: numery Pokédexu, typy i ewolucje 151 gatunków
 - `data/legacy_ids.tsv`: mapowanie gatunków z zapisu 1.0
+- `pokemon-red.sh`: gotowa dystrybucja w jednym pliku
+- `tools/build_standalone.py`: generator dystrybucji
 - `tests/run_tests.sh`: testy lokalne
 
 ```bash
 bash -n bash-pokemon/bash_pokemon.sh
 bash bash-pokemon/tests/run_tests.sh
+python3 bash-pokemon/tests/test_standalone.py
 ```
 
 Dane gatunków i warunki fabularne sprawdzono w referencyjnej rekonstrukcji

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Pokémon: Bash Red 1.1.0. Bash 4.4+, no external game runtime.
+# Pokémon: Bash Red 1.2.0. Bash 4.4+, no external game runtime.
 if (( BASH_VERSINFO[0] < 4 || BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4 )); then
     printf 'Wymagany Bash 4.4 lub nowszy\n' >&2
     exit 1
 fi
 
-VERSION=1.1.0
+VERSION=1.2.0
 GAME_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 declare -a names types types2 evolutions evolve_at map
 while IFS=$'\t' read -r id name type second evolution condition; do

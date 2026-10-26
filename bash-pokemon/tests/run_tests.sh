@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
-source "$ROOT/bash_pokemon.sh"
+ENTRY=${BASH_POKEMON_TEST_ENTRY:-$ROOT/bash_pokemon.sh}
+source "$ENTRY"
 save_file=$TMP/save.dat
 passed=0
 check() {
@@ -422,22 +423,22 @@ legacy_test() {
 }
 cli_test() {
     local file="$TMP/cli save.dat"
-    printf '2\nd\nj\n\np\n0\nq\n' | bash "$ROOT/bash_pokemon.sh" --new --save "$file" > "$TMP/cli.out"
+    printf '2\nd\nj\n\np\n0\nq\n' | bash "$ENTRY" --new --save "$file" > "$TMP/cli.out"
     save_file=$file; load_game
     eq "${party_id[0]}:$x:$starter" 4:11:4
-    bash "$ROOT/bash_pokemon.sh" --load --save "$file" < /dev/null > "$TMP/resume.out"
+    bash "$ENTRY" --load --save "$file" < /dev/null > "$TMP/resume.out"
     grep -q 'Wczytano' "$TMP/resume.out"
-    printf 'n\n' | bash "$ROOT/bash_pokemon.sh" --new --save "$file" >/dev/null
+    printf 'n\n' | bash "$ENTRY" --new --save "$file" >/dev/null
     load_game; eq "${party_id[0]}" 4
     printf 'CORRUPT\n' > "$file"
-    expect_status 1 bash "$ROOT/bash_pokemon.sh" --save "$file" < /dev/null >/dev/null 2>&1
+    expect_status 1 bash "$ENTRY" --save "$file" < /dev/null >/dev/null 2>&1
     eq "$(cat "$file")" CORRUPT
-    expect_status 1 bash "$ROOT/bash_pokemon.sh" --save >/dev/null 2>&1
-    expect_status 1 bash "$ROOT/bash_pokemon.sh" --load --save "$TMP/missing" >/dev/null 2>&1
-    expect_status 1 bash "$ROOT/bash_pokemon.sh" --unknown >/dev/null 2>&1
-    expect_status 1 bash "$ROOT/bash_pokemon.sh" --new --save "$TMP" <<< $'t\n1' >/dev/null 2>&1
-    bash "$ROOT/bash_pokemon.sh" --help >/dev/null
-    eq "$(bash "$ROOT/bash_pokemon.sh" --version)" 1.1.0
+    expect_status 1 bash "$ENTRY" --save >/dev/null 2>&1
+    expect_status 1 bash "$ENTRY" --load --save "$TMP/missing" >/dev/null 2>&1
+    expect_status 1 bash "$ENTRY" --unknown >/dev/null 2>&1
+    expect_status 1 bash "$ENTRY" --new --save "$TMP" <<< $'t\n1' >/dev/null 2>&1
+    bash "$ENTRY" --help >/dev/null
+    eq "$(bash "$ENTRY" --version)" 1.2.0
 }
 check '151 species, Gen I types, evolution graph and 76 legacy IDs' species_test
 check 'three starters and clean new-game state' starters_test
